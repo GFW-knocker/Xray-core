@@ -10,10 +10,12 @@ import (
 	"github.com/GFW-knocker/Xray-core/common/errors"
 	"github.com/GFW-knocker/Xray-core/common/mux"
 	"github.com/GFW-knocker/Xray-core/common/net"
+	"github.com/GFW-knocker/Xray-core/common/serial"
 	"github.com/GFW-knocker/Xray-core/common/task"
 	"github.com/GFW-knocker/Xray-core/core"
 	"github.com/GFW-knocker/Xray-core/proxy"
 	"github.com/GFW-knocker/Xray-core/transport/internet"
+	"google.golang.org/protobuf/proto"
 )
 
 type DynamicInboundHandler struct {
@@ -204,4 +206,17 @@ func (h *DynamicInboundHandler) GetRandomInboundProxy() (interface{}, net.Port, 
 
 func (h *DynamicInboundHandler) Tag() string {
 	return h.tag
+}
+
+// ReceiverSettings implements inbound.Handler.
+func (h *DynamicInboundHandler) ReceiverSettings() *serial.TypedMessage {
+	return serial.ToTypedMessage(h.receiverConfig)
+}
+
+// ProxySettings implements inbound.Handler.
+func (h *DynamicInboundHandler) ProxySettings() *serial.TypedMessage {
+	if v, ok := h.proxyConfig.(proto.Message); ok {
+		return serial.ToTypedMessage(v)
+	}
+	return nil
 }

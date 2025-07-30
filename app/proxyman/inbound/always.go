@@ -9,11 +9,13 @@ import (
 	"github.com/GFW-knocker/Xray-core/common/errors"
 	"github.com/GFW-knocker/Xray-core/common/mux"
 	"github.com/GFW-knocker/Xray-core/common/net"
+	"github.com/GFW-knocker/Xray-core/common/serial"
 	"github.com/GFW-knocker/Xray-core/core"
 	"github.com/GFW-knocker/Xray-core/features/policy"
 	"github.com/GFW-knocker/Xray-core/features/stats"
 	"github.com/GFW-knocker/Xray-core/proxy"
 	"github.com/GFW-knocker/Xray-core/transport/internet"
+	"google.golang.org/protobuf/proto"
 )
 
 func getStatCounter(v *core.Instance, tag string) (stats.Counter, stats.Counter) {
@@ -42,10 +44,12 @@ func getStatCounter(v *core.Instance, tag string) (stats.Counter, stats.Counter)
 }
 
 type AlwaysOnInboundHandler struct {
-	proxy   proxy.Inbound
-	workers []worker
-	mux     *mux.Server
-	tag     string
+	proxyConfig    interface{}
+	receiverConfig *proxyman.ReceiverConfig
+	proxy          proxy.Inbound
+	workers        []worker
+	mux            *mux.Server
+	tag            string
 }
 
 func NewAlwaysOnInboundHandler(ctx context.Context, tag string, receiverConfig *proxyman.ReceiverConfig, proxyConfig interface{}) (*AlwaysOnInboundHandler, error) {
@@ -59,9 +63,11 @@ func NewAlwaysOnInboundHandler(ctx context.Context, tag string, receiverConfig *
 	}
 
 	h := &AlwaysOnInboundHandler{
-		proxy: p,
-		mux:   mux.NewServer(ctx),
-		tag:   tag,
+		receiverConfig: receiverConfig,
+		proxyConfig:    proxyConfig,
+		proxy:          p,
+		mux:            mux.NewServer(ctx),
+		tag:            tag,
 	}
 
 	uplinkCounter, downlinkCounter := getStatCounter(core.MustFromContext(ctx), tag)
@@ -186,4 +192,17 @@ func (h *AlwaysOnInboundHandler) Tag() string {
 
 func (h *AlwaysOnInboundHandler) GetInbound() proxy.Inbound {
 	return h.proxy
+}
+
+// ReceiverSettings implements inbound.Handler.
+func (h *AlwaysOnInboundHandler) ReceiverSettings() *serial.TypedMessage {
+	return serial.ToTypedMessage(h.receiverConfig)
+}
+
+// ProxySettings implements inbound.Handler.
+func (h *AlwaysOnInboundHandler) ProxySettings() *serial.TypedMessage {
+	if v, ok := h.proxyConfig.(proto.Message); ok {
+		return serial.ToTypedMessage(v)
+	}
+	return nil
 }

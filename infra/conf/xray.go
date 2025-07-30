@@ -71,10 +71,8 @@ func (c *SniffingConfig) Build() (*proxyman.SniffingConfig, error) {
 				p = append(p, "tls")
 			case "quic":
 				p = append(p, "quic")
-			case "fakedns":
+			case "fakedns", "fakedns+others":
 				p = append(p, "fakedns")
-			case "fakedns+others":
-				p = append(p, "fakedns+others")
 			default:
 				return nil, errors.New("unknown protocol: ", protocol)
 			}
@@ -294,7 +292,8 @@ func (c *OutboundDetourConfig) Build() (*core.OutboundHandlerConfig, error) {
 			senderSettings.ViaCidr = strings.Split(*c.SendThrough, "/")[1]
 		} else {
 			if address.Family().IsDomain() {
-				if address.Address.Domain() != "origin" {
+				domain := address.Address.Domain()
+				if domain != "origin" && domain != "srcip" {
 					return nil, errors.New("unable to send through: " + address.String())
 				}
 			}

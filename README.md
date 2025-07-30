@@ -40,7 +40,7 @@ https://github.com/XTLS/Xray-core
   - [Hiddify](https://github.com/hiddify/Hiddify-Manager)
 - One Click
   - [Xray-REALITY](https://github.com/zxcvos/Xray-script), [xray-reality](https://github.com/sajjaddg/xray-reality), [reality-ezpz](https://github.com/aleskxyz/reality-ezpz)
-  - [Xray_bash_onekey](https://github.com/hello-yunshu/Xray_bash_onekey), [XTool](https://github.com/LordPenguin666/XTool)
+  - [Xray_bash_onekey](https://github.com/hello-yunshu/Xray_bash_onekey), [XTool](https://github.com/LordPenguin666/XTool), [VPainLess](https://github.com/vpainless/vpainless)
   - [v2ray-agent](https://github.com/mack-a/v2ray-agent), [Xray_onekey](https://github.com/wulabing/Xray_onekey), [ProxySU](https://github.com/proxysu/ProxySU)
 - Magisk
   - [Xray4Magisk](https://github.com/Asterisk4Magisk/Xray4Magisk)
@@ -75,32 +75,43 @@ https://github.com/XTLS/Xray-core
   - [v2rayN](https://github.com/2dust/v2rayN)
   - [Furious](https://github.com/LorenEteval/Furious)
   - [Invisible Man - Xray](https://github.com/InvisibleManVPN/InvisibleMan-XRayClient)
+  - [AnyPortal](https://github.com/AnyPortal/AnyPortal)
 - Android
   - [MahsaNG](https://github.com/GFW-knocker/MahsaNG)
   - [v2rayNG](https://github.com/2dust/v2rayNG)
   - [X-flutter](https://github.com/XTLS/X-flutter)
   - [SaeedDev94/Xray](https://github.com/SaeedDev94/Xray)
-- iOS & macOS arm64
-  - [FoXray](https://apps.apple.com/app/foxray/id6448898396)
+  - [SimpleXray](https://github.com/lhear/SimpleXray)
+  - [AnyPortal](https://github.com/AnyPortal/AnyPortal)
+- iOS & macOS arm64 & tvOS
+  - [Happ](https://apps.apple.com/app/happ-proxy-utility/id6504287215) ([tvOS](https://apps.apple.com/us/app/happ-proxy-utility-for-tv/id6748297274))
   - [Streisand](https://apps.apple.com/app/streisand/id6450534064)
+  - [OneXray](https://github.com/OneXray/OneXray)
 - macOS arm64 & x64
+  - [Happ](https://apps.apple.com/app/happ-proxy-utility/id6504287215)
   - [V2rayU](https://github.com/yanue/V2rayU)
   - [V2RayXS](https://github.com/tzmax/V2RayXS)
   - [Furious](https://github.com/LorenEteval/Furious)
-  - [FoXray](https://apps.apple.com/app/foxray/id6448898396)
+  - [OneXray](https://github.com/OneXray/OneXray)
+  - [GoXRay](https://github.com/goxray/desktop)
+  - [AnyPortal](https://github.com/AnyPortal/AnyPortal)
 - Linux
   - [v2rayA](https://github.com/v2rayA/v2rayA)
   - [Furious](https://github.com/LorenEteval/Furious)
+  - [GorzRay](https://github.com/ketetefid/GorzRay)
+  - [GoXRay](https://github.com/goxray/desktop)
+  - [AnyPortal](https://github.com/AnyPortal/AnyPortal)
 
 ## Others that support VLESS, XTLS, REALITY, XUDP, PLUX...
 
-- iOS & macOS arm64
+- iOS & macOS arm64 & tvOS
   - [Shadowrocket](https://apps.apple.com/app/shadowrocket/id932747118)
 - Xray Tools
   - [xray-knife](https://github.com/lilendian0x00/xray-knife)
   - [xray-checker](https://github.com/kutovoys/xray-checker)
 - Xray Wrapper
   - [XTLS/libXray](https://github.com/XTLS/libXray)
+  - [xtls-sdk](https://github.com/remnawave/xtls-sdk)
   - [xtlsapi](https://github.com/hiddify/xtlsapi)
   - [AndroidLibXrayLite](https://github.com/2dust/AndroidLibXrayLite)
   - [Xray-core-python](https://github.com/LorenEteval/Xray-core-python)
@@ -108,14 +119,16 @@ https://github.com/XTLS/Xray-core
 - [XrayR](https://github.com/XrayR-project/XrayR)
   - [XrayR-release](https://github.com/XrayR-project/XrayR-release)
   - [XrayR-V2Board](https://github.com/missuo/XrayR-V2Board)
-- [Clash.Meta](https://github.com/MetaCubeX/Clash.Meta)
-  - [clashN](https://github.com/2dust/clashN)
-  - [Clash Meta for Android](https://github.com/MetaCubeX/ClashMetaForAndroid)
-- [sing-box](https://github.com/SagerNet/sing-box)
+- Cores
+  - [Amnezia VPN](https://github.com/amnezia-vpn)
+  - [mihomo](https://github.com/MetaCubeX/mihomo)
+  - [sing-box](https://github.com/SagerNet/sing-box)
 
 ## Contributing
 
 [Code of Conduct](https://github.com/XTLS/Xray-core/blob/main/CODE_OF_CONDUCT.md)
+
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/XTLS/Xray-core)
 
 ## Credits
 

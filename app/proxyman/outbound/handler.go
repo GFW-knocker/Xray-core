@@ -16,6 +16,7 @@ import (
 	"github.com/GFW-knocker/Xray-core/common/mux"
 	"github.com/GFW-knocker/Xray-core/common/net"
 	"github.com/GFW-knocker/Xray-core/common/net/cnc"
+	"github.com/GFW-knocker/Xray-core/common/serial"
 	"github.com/GFW-knocker/Xray-core/common/session"
 	"github.com/GFW-knocker/Xray-core/core"
 	"github.com/GFW-knocker/Xray-core/features/outbound"
@@ -27,6 +28,7 @@ import (
 	"github.com/GFW-knocker/Xray-core/transport/internet/stat"
 	"github.com/GFW-knocker/Xray-core/transport/internet/tls"
 	"github.com/GFW-knocker/Xray-core/transport/pipe"
+	"google.golang.org/protobuf/proto"
 )
 
 func getStatCounter(v *core.Instance, tag string) (stats.Counter, stats.Counter) {
@@ -59,6 +61,7 @@ type Handler struct {
 	tag             string
 	senderSettings  *proxyman.SenderConfig
 	streamSettings  *internet.MemoryStreamConfig
+	proxyConfig     proto.Message
 	proxy           proxy.Outbound
 	outboundManager outbound.Manager
 	mux             *mux.ClientManager
@@ -101,6 +104,7 @@ func NewHandler(ctx context.Context, config *core.OutboundHandlerConfig) (outbou
 	if err != nil {
 		return nil, err
 	}
+	h.proxyConfig = proxyConfig
 
 	rawProxyHandler, err := common.CreateObject(ctx, proxyConfig)
 	if err != nil {
@@ -275,11 +279,9 @@ func (h *Handler) Dial(ctx context.Context, dest net.Destination) (stat.Connecti
 
 			outbounds := session.OutboundsFromContext(ctx)
 			ob := outbounds[len(outbounds)-1]
-			addr := h.senderSettings.Via.AsAddress()
 			var domain string
-			if addr.Family().IsDomain() {
-				domain = addr.Domain()
-			}
+			addr := h.senderSettings.Via.AsAddress()
+			domain = h.senderSettings.Via.GetDomain()
 			switch {
 			case h.senderSettings.ViaCidr != "":
 				ob.Gateway = ParseRandomIP(addr, h.senderSettings.ViaCidr)
@@ -287,18 +289,24 @@ func (h *Handler) Dial(ctx context.Context, dest net.Destination) (stat.Connecti
 			case domain == "origin":
 
 				if inbound := session.InboundFromContext(ctx); inbound != nil {
-					origin, _, err := net.SplitHostPort(inbound.Conn.LocalAddr().String())
-					if err == nil {
-						ob.Gateway = net.ParseAddress(origin)
+					if inbound.Conn != nil {
+						origin, _, err := net.SplitHostPort(inbound.Conn.LocalAddr().String())
+						if err == nil {
+							ob.Gateway = net.ParseAddress(origin)
+							errors.LogDebug(ctx, "use receive package ip as snedthrough: ", origin)
+						}
 					}
-
 				}
 			case domain == "srcip":
 				if inbound := session.InboundFromContext(ctx); inbound != nil {
-					srcip, _, err := net.SplitHostPort(inbound.Conn.RemoteAddr().String())
-					if err == nil {
-						ob.Gateway = net.ParseAddress(srcip)
+					if inbound.Conn != nil {
+						clientaddr, _, err := net.SplitHostPort(inbound.Conn.RemoteAddr().String())
+						if err == nil {
+							ob.Gateway = net.ParseAddress(clientaddr)
+							errors.LogDebug(ctx, "use client src ip as snedthrough: ", clientaddr)
+						}
 					}
+
 				}
 			//case addr.Family().IsDomain():
 			default:
@@ -347,6 +355,16 @@ func (h *Handler) Close() error {
 	common.Close(h.mux)
 	common.Close(h.proxy)
 	return nil
+}
+
+// SenderSettings implements outbound.Handler.
+func (h *Handler) SenderSettings() *serial.TypedMessage {
+	return serial.ToTypedMessage(h.senderSettings)
+}
+
+// ProxySettings implements outbound.Handler.
+func (h *Handler) ProxySettings() *serial.TypedMessage {
+	return serial.ToTypedMessage(h.proxyConfig)
 }
 
 func ParseRandomIP(addr net.Address, prefix string) net.Address {

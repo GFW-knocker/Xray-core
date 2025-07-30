@@ -8,6 +8,7 @@ import (
 	"github.com/GFW-knocker/Xray-core/common/errors"
 	"github.com/GFW-knocker/Xray-core/common/net"
 	"github.com/GFW-knocker/Xray-core/common/net/cnc"
+	"github.com/GFW-knocker/Xray-core/common/serial"
 	"github.com/GFW-knocker/Xray-core/common/signal/done"
 	"github.com/GFW-knocker/Xray-core/transport"
 )
@@ -107,4 +108,14 @@ func (co *Outbound) Close() error {
 
 	co.closed = true
 	return co.listener.Close()
+}
+
+// SenderSettings implements outbound.Handler.
+func (co *Outbound) SenderSettings() *serial.TypedMessage {
+	return nil
+}
+
+// ProxySettings implements outbound.Handler.
+func (co *Outbound) ProxySettings() *serial.TypedMessage {
+	return nil
 }

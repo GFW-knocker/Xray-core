@@ -7,8 +7,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/GFW-knocker/Xray-core/common/errors"
-	"github.com/GFW-knocker/Xray-core/transport/internet"
+	"github.com/cloudflare/circl/sign/mldsa/mldsa65"
 	"github.com/xtls/reality"
 )
 
@@ -31,6 +30,20 @@ func (c *Config) GetREALITYConfig() *reality.Config {
 		SessionTicketsDisabled: true,
 
 		KeyLogWriter: KeyLogWriterFromConfig(c),
+	}
+	if c.Mldsa65Seed != nil {
+		_, key := mldsa65.NewKeyFromSeed((*[32]byte)(c.Mldsa65Seed))
+		config.Mldsa65Key = key.Bytes()
+	}
+	if c.LimitFallbackUpload != nil {
+		config.LimitFallbackUpload.AfterBytes = c.LimitFallbackUpload.AfterBytes
+		config.LimitFallbackUpload.BytesPerSec = c.LimitFallbackUpload.BytesPerSec
+		config.LimitFallbackUpload.BurstBytesPerSec = c.LimitFallbackUpload.BurstBytesPerSec
+	}
+	if c.LimitFallbackDownload != nil {
+		config.LimitFallbackDownload.AfterBytes = c.LimitFallbackDownload.AfterBytes
+		config.LimitFallbackDownload.BytesPerSec = c.LimitFallbackDownload.BytesPerSec
+		config.LimitFallbackDownload.BurstBytesPerSec = c.LimitFallbackDownload.BurstBytesPerSec
 	}
 	config.ServerNames = make(map[string]bool)
 	for _, serverName := range c.ServerNames {
