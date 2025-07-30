@@ -502,32 +502,30 @@ type FragmentWriter struct {
 	count    uint64
 }
 
+var re = regexp.MustCompile("(?i)(\r\nHost:.*\r\n)")
+
 func (f *FragmentWriter) Write(b []byte) (int, error) {
 	f.count++
 
 	if f.fragment.FakeHost {
-		if f.count == 1 {
-			h1_header := f.fragment.Host1Header
-			h1_domain := f.fragment.Host1Domain
-			h2_header := f.fragment.Host2Header
-			h2_domain := f.fragment.Host2Domain
 
-			// find the old host case-insensitive
-			re := regexp.MustCompile("(?i)(\r\nHost:.*\r\n)")
-			firstMatch := re.FindSubmatch(b)
-			var new_b []byte
-			if len(firstMatch) > 1 {
-				old_h := firstMatch[1]
-				new_h := []byte("\r\n" + h1_header + h1_domain + string(old_h) + h2_header + h2_domain + "\r\n")
-				new_b = bytes.Replace(b, old_h, new_h, 1)
-			} else {
-				new_b = b
+		if f.count < 500 {
+			if len(b) >= 5 {
+				if (b[0] == 'P' && b[1] == 'O' && b[2] == 'S' && b[3] == 'T' && b[4] == ' ') ||
+					(b[0] == 'G' && b[1] == 'E' && b[2] == 'T' && b[3] == ' ') {
+
+					firstMatch := re.FindSubmatch(b)
+					if len(firstMatch) > 1 {
+						var new_b []byte
+						old_h := firstMatch[1]
+						new_h := []byte("\r\n" + f.fragment.Host1Header + f.fragment.Host1Domain + string(old_h) + f.fragment.Host2Header + f.fragment.Host2Domain + "\r\n")
+						new_b = bytes.Replace(b, old_h, new_h, 1)
+						return f.writer.Write(new_b)
+					}
+				}
 			}
-			return f.writer.Write(new_b)
-
-		} else {
-			return f.writer.Write(b)
 		}
+		return f.writer.Write(b)
 	}
 
 	if f.fragment.PacketsFrom == 0 && f.fragment.PacketsTo == 1 {

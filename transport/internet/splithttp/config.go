@@ -49,6 +49,12 @@ func (c *Config) GetRequestHeader(rawURL string) http.Header {
 		header.Add(k, v)
 	}
 
+	// GFW-Knocker UserAgent useragent
+	uagent := header.Get("User-Agent")
+	if uagent == "" {
+		header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36")
+	}
+
 	u, _ := url.Parse(rawURL)
 	// https://www.rfc-editor.org/rfc/rfc7541.html#appendix-B
 	// h2's HPACK Header Compression feature employs a huffman encoding using a static table.
