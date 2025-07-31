@@ -19,7 +19,7 @@ import (
 
 type connectionContext struct {
 	rawConn *sysConn
-	conn    quic.Connection
+	conn    quic.Conn
 }
 
 var errConnectionClosed = errors.New("connection closed")
@@ -35,7 +35,7 @@ func (c *connectionContext) openStream(destAddr net.Addr) (*interConn, error) {
 	}
 
 	conn := &interConn{
-		stream: stream,
+		stream: *stream,
 		local:  c.conn.LocalAddr(),
 		remote: destAddr,
 	}
@@ -49,7 +49,7 @@ type clientConnections struct {
 	cleanup *task.Periodic
 }
 
-func isActive(s quic.Connection) bool {
+func isActive(s quic.Conn) bool {
 	select {
 	case <-s.Context().Done():
 		return false
@@ -176,7 +176,7 @@ func (s *clientConnections) openConnection(ctx context.Context, destAddr net.Add
 	}
 
 	context := &connectionContext{
-		conn:    conn,
+		conn:    *conn,
 		rawConn: sysConn,
 	}
 	s.conns[dest] = append(conns, context)

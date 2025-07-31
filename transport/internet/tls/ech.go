@@ -15,13 +15,13 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/GFW-knocker/Xray-core/common/errors"
+	"github.com/GFW-knocker/Xray-core/common/net"
+	"github.com/GFW-knocker/Xray-core/common/utils"
+	"github.com/GFW-knocker/Xray-core/transport/internet"
 	"github.com/miekg/dns"
 	"github.com/xtls/reality"
 	"github.com/xtls/reality/hpke"
-	"github.com/xtls/xray-core/common/errors"
-	"github.com/xtls/xray-core/common/net"
-	"github.com/xtls/xray-core/common/utils"
-	"github.com/xtls/xray-core/transport/internet"
 	"golang.org/x/crypto/cryptobyte"
 )
 

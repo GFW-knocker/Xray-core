@@ -2,8 +2,9 @@ package internet
 
 import (
 	"context"
-	"github.com/xtls/xray-core/common/net"
 	"time"
+
+	"github.com/GFW-knocker/Xray-core/common/net"
 )
 
 type result struct {

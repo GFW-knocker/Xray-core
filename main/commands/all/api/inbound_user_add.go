@@ -4,21 +4,21 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/xtls/xray-core/common/protocol"
+	"github.com/GFW-knocker/Xray-core/common/protocol"
 
-	handlerService "github.com/xtls/xray-core/app/proxyman/command"
-	cserial "github.com/xtls/xray-core/common/serial"
+	handlerService "github.com/GFW-knocker/Xray-core/app/proxyman/command"
+	cserial "github.com/GFW-knocker/Xray-core/common/serial"
 
-	"github.com/xtls/xray-core/core"
-	"github.com/xtls/xray-core/infra/conf"
-	"github.com/xtls/xray-core/infra/conf/serial"
-	"github.com/xtls/xray-core/proxy/shadowsocks"
-	"github.com/xtls/xray-core/proxy/shadowsocks_2022"
-	"github.com/xtls/xray-core/proxy/trojan"
-	vlessin "github.com/xtls/xray-core/proxy/vless/inbound"
-	vmessin "github.com/xtls/xray-core/proxy/vmess/inbound"
+	"github.com/GFW-knocker/Xray-core/core"
+	"github.com/GFW-knocker/Xray-core/infra/conf"
+	"github.com/GFW-knocker/Xray-core/infra/conf/serial"
+	"github.com/GFW-knocker/Xray-core/proxy/shadowsocks"
+	"github.com/GFW-knocker/Xray-core/proxy/shadowsocks_2022"
+	"github.com/GFW-knocker/Xray-core/proxy/trojan"
+	vlessin "github.com/GFW-knocker/Xray-core/proxy/vless/inbound"
+	vmessin "github.com/GFW-knocker/Xray-core/proxy/vmess/inbound"
 
-	"github.com/xtls/xray-core/main/commands/base"
+	"github.com/GFW-knocker/Xray-core/main/commands/base"
 )
 
 var cmdAddInboundUsers = &base.Command{

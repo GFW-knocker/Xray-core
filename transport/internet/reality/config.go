@@ -7,6 +7,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/GFW-knocker/Xray-core/common/errors"
+	"github.com/GFW-knocker/Xray-core/transport/internet"
 	"github.com/cloudflare/circl/sign/mldsa/mldsa65"
 	"github.com/xtls/reality"
 )

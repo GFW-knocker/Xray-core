@@ -11,7 +11,6 @@ import (
 
 	"github.com/GFW-knocker/Xray-core/common"
 	"github.com/GFW-knocker/Xray-core/common/buf"
-	"github.com/GFW-knocker/Xray-core/common/crypto"
 	"github.com/GFW-knocker/Xray-core/common/dice"
 	"github.com/GFW-knocker/Xray-core/common/errors"
 	"github.com/GFW-knocker/Xray-core/common/net"
@@ -30,6 +29,7 @@ import (
 	"github.com/GFW-knocker/Xray-core/transport/internet"
 	"github.com/GFW-knocker/Xray-core/transport/internet/stat"
 	"github.com/GFW-knocker/Xray-core/transport/internet/tls"
+	"github.com/pires/go-proxyproto"
 )
 
 var useSplice bool
