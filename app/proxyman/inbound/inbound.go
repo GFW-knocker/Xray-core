@@ -19,7 +19,7 @@ import (
 // Manager manages all inbound handlers.
 type Manager struct {
 	access          sync.RWMutex
-	untaggedHandler []inbound.Handler
+	untaggedHandlers []inbound.Handler
 	taggedHandlers  map[string]inbound.Handler
 	running         bool
 }
@@ -49,7 +49,7 @@ func (m *Manager) AddHandler(ctx context.Context, handler inbound.Handler) error
 		}
 		m.taggedHandlers[tag] = handler
 	} else {
-		m.untaggedHandler = append(m.untaggedHandler, handler)
+		m.untaggedHandlers = append(m.untaggedHandlers, handler)
 	}
 
 	if m.running {
@@ -96,8 +96,8 @@ func (m *Manager) ListHandlers(ctx context.Context) []inbound.Handler {
 	m.access.RLock()
 	defer m.access.RUnlock()
 
-	var response []inbound.Handler
-	copy(m.untaggedHandler, response)
+	response := make([]inbound.Handler, len(m.untaggedHandlers))
+	copy(response, m.untaggedHandlers)
 
 	for _, v := range m.taggedHandlers {
 		response = append(response, v)
@@ -119,7 +119,7 @@ func (m *Manager) Start() error {
 		}
 	}
 
-	for _, handler := range m.untaggedHandler {
+	for _, handler := range m.untaggedHandlers {
 		if err := handler.Start(); err != nil {
 			return err
 		}
@@ -140,7 +140,7 @@ func (m *Manager) Close() error {
 			errs = append(errs, err)
 		}
 	}
-	for _, handler := range m.untaggedHandler {
+	for _, handler := range m.untaggedHandlers {
 		if err := handler.Close(); err != nil {
 			errs = append(errs, err)
 		}
