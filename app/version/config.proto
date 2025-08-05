@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package xray.app.version;
 option csharp_namespace = "Xray.App.Version";
-option go_package = "github.com/xtls/xray-core/app/version";
+option go_package = "github.com/GFW-knocker/Xray-core/app/version";
 option java_package = "com.xray.app.version";
 option java_multiple_files = true;
 
