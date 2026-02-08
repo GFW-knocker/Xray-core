@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+package xray.transport.internet.dnstt;
+option csharp_namespace = "Xray.Transport.Internet.Dnstt";
+option go_package = "github.com/GFW-knocker/Xray-core/transport/internet/dnstt";
+option java_package = "com.xray.transport.internet.dnstt";
+option java_multiple_files = true;
+
+message Config {
+  string server_public_key = 1;
+  string server_address = 2;
+}
