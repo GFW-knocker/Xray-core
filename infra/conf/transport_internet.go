@@ -17,6 +17,7 @@ import (
 	"github.com/GFW-knocker/Xray-core/common/protocol"
 	"github.com/GFW-knocker/Xray-core/common/serial"
 	"github.com/GFW-knocker/Xray-core/transport/internet"
+	"github.com/GFW-knocker/Xray-core/transport/internet/dnstt"
 	"github.com/GFW-knocker/Xray-core/transport/internet/httpupgrade"
 	"github.com/GFW-knocker/Xray-core/transport/internet/kcp"
 	"github.com/GFW-knocker/Xray-core/transport/internet/quic"
@@ -218,6 +219,20 @@ func (c *HttpUpgradeConfig) Build() (proto.Message, error) {
 		Header:              c.Headers,
 		AcceptProxyProtocol: c.AcceptProxyProtocol,
 		Ed:                  ed,
+	}
+	return config, nil
+}
+
+type DNSTTConfig struct {
+	ServerPublicKey string `json:"serverPublicKey"`
+	ServerAddress   string `json:"serverAddress"`
+}
+
+// Build implements Buildable.
+func (c *DNSTTConfig) Build() (proto.Message, error) {
+	config := &dnstt.Config{
+		ServerPublicKey: c.ServerPublicKey,
+		ServerAddress:   c.ServerAddress,
 	}
 	return config, nil
 }
@@ -785,6 +800,8 @@ func (p TransportProtocol) Build() (string, error) {
 	case "httpupgrade":
 		errors.PrintDeprecatedFeatureWarning("HTTPUpgrade transport (with ALPN http/1.1, etc.)", "XHTTP H2 & H3")
 		return "httpupgrade", nil
+	case "dnstt":
+		return "dnstt", nil
 	case "h2", "h3", "http":
 		return "", errors.PrintRemovedFeatureError("HTTP transport (without header padding, etc.)", "XHTTP stream-one H2 & H3")
 	case "quic":
@@ -812,7 +829,7 @@ type HappyEyeballsConfig struct {
 }
 
 func (h *HappyEyeballsConfig) UnmarshalJSON(data []byte) error {
-	var innerHappyEyeballsConfig = struct {
+	innerHappyEyeballsConfig := struct {
 		PrioritizeIPv6   bool   `json:"prioritizeIPv6"`
 		TryDelayMs       uint64 `json:"tryDelayMs"`
 		Interleave       uint32 `json:"interleave"`
@@ -939,7 +956,7 @@ func (c *SocketConfig) Build() (*internet.SocketConfig, error) {
 		return nil, errors.New("unsupported address and port strategy: ", c.AddressPortStrategy)
 	}
 
-	var happyEyeballs = &internet.HappyEyeballsConfig{Interleave: 1, PrioritizeIpv6: false, TryDelayMs: 0, MaxConcurrentTry: 4}
+	happyEyeballs := &internet.HappyEyeballsConfig{Interleave: 1, PrioritizeIpv6: false, TryDelayMs: 0, MaxConcurrentTry: 4}
 	if c.HappyEyeballsSettings != nil {
 		happyEyeballs.PrioritizeIpv6 = c.HappyEyeballsSettings.PrioritizeIPv6
 		happyEyeballs.Interleave = c.HappyEyeballsSettings.Interleave
@@ -986,6 +1003,7 @@ type StreamConfig struct {
 	GRPCSettings        *GRPCConfig        `json:"grpcSettings"`
 	WSSettings          *WebSocketConfig   `json:"wsSettings"`
 	HTTPUPGRADESettings *HttpUpgradeConfig `json:"httpupgradeSettings"`
+	DNSTTSettings       *DNSTTConfig       `json:"dnsttSettings"`
 	SocketSettings      *SocketConfig      `json:"sockopt"`
 }
 
@@ -1112,6 +1130,16 @@ func (c *StreamConfig) Build() (*internet.StreamConfig, error) {
 		config.TransportSettings = append(config.TransportSettings, &internet.TransportConfig{
 			ProtocolName: "httpupgrade",
 			Settings:     serial.ToTypedMessage(hs),
+		})
+	}
+	if c.DNSTTSettings != nil {
+		ds, err := c.DNSTTSettings.Build()
+		if err != nil {
+			return nil, errors.New("Failed to build DNSTT config.").Base(err)
+		}
+		config.TransportSettings = append(config.TransportSettings, &internet.TransportConfig{
+			ProtocolName: "dnstt",
+			Settings:     serial.ToTypedMessage(ds),
 		})
 	}
 	if c.SocketSettings != nil {
