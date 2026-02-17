@@ -16,6 +16,7 @@ import (
 	"github.com/GFW-knocker/Xray-core/proxy/freedom"
 	"github.com/GFW-knocker/Xray-core/proxy/socks"
 	"github.com/GFW-knocker/Xray-core/testing/servers/tcp"
+	"github.com/GFW-knocker/Xray-core/transport/internet"
 	xproxy "golang.org/x/net/proxy"
 )
 
@@ -83,7 +84,7 @@ func TestResolveIP(t *testing.T) {
 			{
 				Tag: "direct",
 				ProxySettings: serial.ToTypedMessage(&freedom.Config{
-					DomainStrategy: freedom.Config_USE_IP,
+					DomainStrategy: internet.DomainStrategy_USE_IP,
 				}),
 			},
 		},

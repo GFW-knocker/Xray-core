@@ -2,15 +2,14 @@ package shadowsocks
 
 import (
 	"bytes"
-	"crypto/aes"
 	"crypto/cipher"
 	"crypto/md5"
 	"crypto/sha1"
-	"google.golang.org/protobuf/proto"
 	"io"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/GFW-knocker/Xray-core/common"
-	"github.com/GFW-knocker/Xray-core/common/antireplay"
 	"github.com/GFW-knocker/Xray-core/common/buf"
 	"github.com/GFW-knocker/Xray-core/common/crypto"
 	"github.com/GFW-knocker/Xray-core/common/errors"
@@ -25,8 +24,6 @@ type MemoryAccount struct {
 	CipherType CipherType
 	Key        []byte
 	Password   string
-
-	replayFilter antireplay.GeneralizedReplayFilter
 }
 
 var ErrIVNotUnique = errors.New("IV is not unique")
@@ -43,26 +40,11 @@ func (a *MemoryAccount) ToProto() proto.Message {
 	return &Account{
 		CipherType: a.CipherType,
 		Password:   a.Password,
-		IvCheck:    a.replayFilter != nil,
 	}
-}
-
-func (a *MemoryAccount) CheckIV(iv []byte) error {
-	if a.replayFilter == nil {
-		return nil
-	}
-	if a.replayFilter.Check(iv) {
-		return nil
-	}
-	return ErrIVNotUnique
 }
 
 func createAesGcm(key []byte) cipher.AEAD {
-	block, err := aes.NewCipher(key)
-	common.Must(err)
-	gcm, err := cipher.NewGCM(block)
-	common.Must(err)
-	return gcm
+	return crypto.NewAesGcm(key)
 }
 
 func createChaCha20Poly1305(key []byte) cipher.AEAD {
@@ -121,12 +103,6 @@ func (a *Account) AsAccount() (protocol.Account, error) {
 		CipherType: a.CipherType,
 		Key:        passwordToCipherKey([]byte(a.Password), Cipher.KeySize()),
 		Password:   a.Password,
-		replayFilter: func() antireplay.GeneralizedReplayFilter {
-			if a.IvCheck {
-				return antireplay.NewBloomRing()
-			}
-			return nil
-		}(),
 	}, nil
 }
 

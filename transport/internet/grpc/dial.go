@@ -2,7 +2,7 @@ package grpc
 
 import (
 	"context"
-	gonet "net"
+	"reflect"
 	"sync"
 	"time"
 
@@ -11,6 +11,7 @@ import (
 	"github.com/GFW-knocker/Xray-core/common/errors"
 	"github.com/GFW-knocker/Xray-core/common/net"
 	"github.com/GFW-knocker/Xray-core/common/session"
+	"github.com/GFW-knocker/Xray-core/common/utils"
 	"github.com/GFW-knocker/Xray-core/transport/internet"
 	"github.com/GFW-knocker/Xray-core/transport/internet/grpc/encoding"
 	"github.com/GFW-knocker/Xray-core/transport/internet/reality"
@@ -99,7 +100,7 @@ func getGrpcClient(ctx context.Context, dest net.Destination, streamSettings *in
 			},
 			MinConnectTimeout: 5 * time.Second,
 		}),
-		grpc.WithContextDialer(func(gctx context.Context, s string) (gonet.Conn, error) {
+		grpc.WithContextDialer(func(gctx context.Context, s string) (net.Conn, error) {
 			select {
 			case <-gctx.Done():
 				return nil, gctx.Err()
@@ -168,10 +169,6 @@ func getGrpcClient(ctx context.Context, dest net.Destination, streamSettings *in
 		dialOptions = append(dialOptions, grpc.WithInitialWindowSize(grpcSettings.InitialWindowsSize))
 	}
 
-	if grpcSettings.UserAgent != "" {
-		dialOptions = append(dialOptions, grpc.WithUserAgent(grpcSettings.UserAgent))
-	}
-
 	var grpcDestHost string
 	if dest.Address.Family().IsDomain() {
 		grpcDestHost = dest.Address.Domain()
@@ -179,10 +176,26 @@ func getGrpcClient(ctx context.Context, dest net.Destination, streamSettings *in
 		grpcDestHost = dest.Address.IP().String()
 	}
 
-	conn, err := grpc.Dial(
-		gonet.JoinHostPort(grpcDestHost, dest.Port.String()),
+	conn, err := grpc.NewClient(
+		"passthrough:///"+net.JoinHostPort(grpcDestHost, dest.Port.String()),
 		dialOptions...,
 	)
+	if err == nil {
+		userAgent := grpcSettings.UserAgent
+		if userAgent == "" {
+			userAgent = utils.ChromeUA
+		}
+		setUserAgent(conn, userAgent)
+		conn.Connect()
+	}
 	globalDialerMap[dialerConf{dest, streamSettings}] = conn
 	return conn, err
+}
+
+// setUserAgent overrides the user-agent on a ClientConn to remove the
+// "grpc-go/version" suffix that grpc.WithUserAgent unconditionally appends.
+func setUserAgent(conn *grpc.ClientConn, ua string) {
+	if f := reflect.ValueOf(conn).Elem().FieldByName("dopts").FieldByName("copts").FieldByName("UserAgent"); f.IsValid() {
+		*(*string)(f.Addr().UnsafePointer()) = ua
+	}
 }

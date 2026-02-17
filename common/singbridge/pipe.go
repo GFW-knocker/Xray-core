@@ -4,10 +4,12 @@ import (
 	"context"
 	"io"
 	"net"
+	"time"
 
-	"github.com/sagernet/sing/common/bufio"
+	"github.com/GFW-knocker/Xray-core/common"
 	"github.com/GFW-knocker/Xray-core/common/buf"
 	"github.com/GFW-knocker/Xray-core/transport"
+	"github.com/sagernet/sing/common/bufio"
 )
 
 func CopyConn(ctx context.Context, inboundConn net.Conn, link *transport.Link, serverConn net.Conn) error {
@@ -33,8 +35,26 @@ func (w *PipeConnWrapper) Close() error {
 	return nil
 }
 
+// This Read implemented a timeout to avoid goroutine leak.
+// as a temporarily solution
 func (w *PipeConnWrapper) Read(b []byte) (n int, err error) {
-	return w.R.Read(b)
+	type readResult struct {
+		n   int
+		err error
+	}
+	c := make(chan readResult, 1)
+	go func() {
+		n, err := w.R.Read(b)
+		c <- readResult{n: n, err: err}
+	}()
+	select {
+	case result := <-c:
+		return result.n, result.err
+	case <-time.After(300 * time.Second):
+		common.Close(w.R)
+		common.Interrupt(w.R)
+		return 0, buf.ErrReadTimeout
+	}
 }
 
 func (w *PipeConnWrapper) Write(p []byte) (n int, err error) {

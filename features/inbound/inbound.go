@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/GFW-knocker/Xray-core/common"
-	"github.com/GFW-knocker/Xray-core/common/net"
 	"github.com/GFW-knocker/Xray-core/common/serial"
 	"github.com/GFW-knocker/Xray-core/features"
 )
@@ -20,9 +19,6 @@ type Handler interface {
 	ReceiverSettings() *serial.TypedMessage
 	// Returns the active proxy settings.
 	ProxySettings() *serial.TypedMessage
-
-	// Deprecated: Do not use in new code.
-	GetRandomInboundProxy() (interface{}, net.Port, int)
 }
 
 // Manager is a feature that manages InboundHandlers.

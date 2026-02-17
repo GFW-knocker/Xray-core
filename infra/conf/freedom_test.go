@@ -7,6 +7,7 @@ import (
 	"github.com/GFW-knocker/Xray-core/common/protocol"
 	. "github.com/GFW-knocker/Xray-core/infra/conf"
 	"github.com/GFW-knocker/Xray-core/proxy/freedom"
+	"github.com/GFW-knocker/Xray-core/transport/internet"
 )
 
 func TestFreedomConfig(t *testing.T) {
@@ -23,7 +24,7 @@ func TestFreedomConfig(t *testing.T) {
 			}`,
 			Parser: loadJSON(creator),
 			Output: &freedom.Config{
-				DomainStrategy: freedom.Config_AS_IS,
+				DomainStrategy: internet.DomainStrategy_AS_IS,
 				DestinationOverride: &freedom.DestinationOverride{
 					Server: &protocol.ServerEndpoint{
 						Address: &net.IPOrDomain{

@@ -17,8 +17,10 @@ import (
 )
 
 var (
-	ErrNotFound = errors.New("user do not exist")
-	ErrReplay   = errors.New("replayed request")
+	ErrNotFound     = errors.New("user do not exist")
+	ErrNeagtiveTime = errors.New("timestamp is negative")
+	ErrInvalidTime  = errors.New("invalid timestamp, perhaps unsynchronized time")
+	ErrReplay       = errors.New("replayed request")
 )
 
 func CreateAuthID(cmdKey []byte, time int64) [16]byte {
@@ -66,12 +68,12 @@ func (aidd *AuthIDDecoder) Decode(data [16]byte) (int64, uint32, int32, []byte) 
 }
 
 func NewAuthIDDecoderHolder() *AuthIDDecoderHolder {
-	return &AuthIDDecoderHolder{make(map[string]*AuthIDDecoderItem), antireplay.NewReplayFilter(120)}
+	return &AuthIDDecoderHolder{make(map[string]*AuthIDDecoderItem), antireplay.NewMapFilter[[16]byte](120)}
 }
 
 type AuthIDDecoderHolder struct {
 	decoders map[string]*AuthIDDecoderItem
-	filter   *antireplay.ReplayFilter
+	filter   *antireplay.ReplayFilter[[16]byte]
 }
 
 type AuthIDDecoderItem struct {
@@ -102,14 +104,14 @@ func (a *AuthIDDecoderHolder) Match(authID [16]byte) (interface{}, error) {
 		}
 
 		if t < 0 {
-			continue
+			return nil, ErrNeagtiveTime
 		}
 
 		if math.Abs(math.Abs(float64(t))-float64(time.Now().Unix())) > 120 {
-			continue
+			return nil, ErrInvalidTime
 		}
 
-		if !a.filter.Check(authID[:]) {
+		if !a.filter.Check(authID) {
 			return nil, ErrReplay
 		}
 

@@ -12,14 +12,15 @@ package core
 import (
 	"fmt"
 	"runtime"
+	"runtime/debug"
 
 	"github.com/GFW-knocker/Xray-core/common/serial"
 )
 
 var (
-	Version_x byte = 25
-	Version_y byte = 8
-	Version_z byte = 3
+	Version_x byte = 26
+	Version_y byte = 2
+	Version_z byte = 6
 )
 
 var (
@@ -27,6 +28,34 @@ var (
 	codename = "MahsaNG Xray-core"
 	intro    = "in memory of Mahsa Amini."
 )
+
+func init() {
+	// Manually injected
+	if build != "Custom" {
+		return
+	}
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return
+	}
+	var isDirty bool
+	var foundBuild bool
+	for _, setting := range info.Settings {
+		switch setting.Key {
+		case "vcs.revision":
+			if len(setting.Value) < 7 {
+				return
+			}
+			build = setting.Value[:7]
+			foundBuild = true
+		case "vcs.modified":
+			isDirty = setting.Value == "true"
+		}
+	}
+	if isDirty && foundBuild {
+		build += "-dirty"
+	}
+}
 
 // Version returns Xray's version as a string, in the form of "x.y.z" where x, y and z are numbers.
 // ".z" part may be omitted in regular releases.

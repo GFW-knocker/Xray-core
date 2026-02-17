@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/GFW-knocker/Xray-core/common"
+	"github.com/GFW-knocker/Xray-core/common/utils"
 	"github.com/GFW-knocker/Xray-core/transport/internet"
 )
 
@@ -24,14 +25,12 @@ func (c *Config) GetRequestHeader() http.Header {
 	for k, v := range c.Header {
 		header.Add(k, v)
 	}
-	header.Set("Host", c.Host)
 
-	// GFW-Knocker UserAgent useragent
-	uagent := header.Get("User-Agent")
-	if uagent == "" {
-		header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36")
+	// header.Set("Host", c.Host)
+
+	if header.Get("User-Agent") == "" {
+		header.Set("User-Agent", utils.ChromeUA)
 	}
-
 	return header
 }
 

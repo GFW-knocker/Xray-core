@@ -3,15 +3,13 @@ package wireguard
 import (
 	"context"
 	"errors"
-	"io"
-	"net"
 	"net/netip"
 	"strconv"
 	"sync"
 
 	"github.com/GFW-knocker/wireguard/conn"
 
-	xnet "github.com/GFW-knocker/Xray-core/common/net"
+	"github.com/GFW-knocker/Xray-core/common/net"
 	"github.com/GFW-knocker/Xray-core/features/dns"
 	"github.com/GFW-knocker/Xray-core/transport/internet"
 )
@@ -54,21 +52,21 @@ func (n *netBind) ParseEndpoint(s string) (conn.Endpoint, error) {
 		return nil, err
 	}
 
-	addr := xnet.ParseAddress(ipStr)
-	if addr.Family() == xnet.AddressFamilyDomain {
+	addr := net.ParseAddress(ipStr)
+	if addr.Family() == net.AddressFamilyDomain {
 		ips, _, err := n.dns.LookupIP(addr.Domain(), n.dnsOption)
 		if err != nil {
 			return nil, err
 		} else if len(ips) == 0 {
 			return nil, dns.ErrEmptyResponse
 		}
-		addr = xnet.IPAddress(ips[0])
+		addr = net.IPAddress(ips[0])
 	}
 
-	dst := xnet.Destination{
+	dst := net.Destination{
 		Address: addr,
-		Port:    xnet.Port(portNum),
-		Network: xnet.Network_UDP,
+		Port:    net.Port(portNum),
+		Network: net.Network_UDP,
 	}
 
 	return &netEndpoint{
@@ -167,7 +165,7 @@ func (bind *netBindClient) connectTo(endpoint *netEndpoint) error {
 			v.endpoint = endpoint
 			v.err = err
 			v.waiter.Done()
-			if err != nil && errors.Is(err, io.EOF) {
+			if err != nil {
 				endpoint.conn = nil
 				return
 			}
@@ -284,7 +282,7 @@ func (bind *netBindServer) Send(buff [][]byte, endpoint conn.Endpoint) error {
 }
 
 type netEndpoint struct {
-	dst  xnet.Destination
+	dst  net.Destination
 	conn net.Conn
 }
 
@@ -317,7 +315,7 @@ func (e netEndpoint) SrcToString() string {
 	return ""
 }
 
-func toNetIpAddr(addr xnet.Address) netip.Addr {
+func toNetIpAddr(addr net.Address) netip.Addr {
 	if addr.Family().IsIPv4() {
 		ip := addr.IP()
 		return netip.AddrFrom4([4]byte{ip[0], ip[1], ip[2], ip[3]})

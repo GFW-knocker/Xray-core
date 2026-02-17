@@ -2,13 +2,15 @@ package singbridge
 
 import (
 	"context"
+	"time"
 
-	B "github.com/sagernet/sing/common/buf"
-	"github.com/sagernet/sing/common/bufio"
-	M "github.com/sagernet/sing/common/metadata"
+	"github.com/GFW-knocker/Xray-core/common"
 	"github.com/GFW-knocker/Xray-core/common/buf"
 	"github.com/GFW-knocker/Xray-core/common/net"
 	"github.com/GFW-knocker/Xray-core/transport"
+	B "github.com/sagernet/sing/common/buf"
+	"github.com/sagernet/sing/common/bufio"
+	M "github.com/sagernet/sing/common/metadata"
 )
 
 func CopyPacketConn(ctx context.Context, inboundConn net.Conn, link *transport.Link, destination net.Destination, serverConn net.PacketConn) error {
@@ -29,6 +31,8 @@ type PacketConnWrapper struct {
 	cached buf.MultiBuffer
 }
 
+// This ReadPacket implemented a timeout to avoid goroutine leak like PipeConnWrapper.Read()
+// as a temporarily solution
 func (w *PacketConnWrapper) ReadPacket(buffer *B.Buffer) (M.Socksaddr, error) {
 	if w.cached != nil {
 		mb, bb := buf.SplitFirst(w.cached)
@@ -47,10 +51,30 @@ func (w *PacketConnWrapper) ReadPacket(buffer *B.Buffer) (M.Socksaddr, error) {
 			return ToSocksaddr(destination), nil
 		}
 	}
-	mb, err := w.ReadMultiBuffer()
-	if err != nil {
-		return M.Socksaddr{}, err
+
+	// timeout
+	type readResult struct {
+		mb  buf.MultiBuffer
+		err error
 	}
+	c := make(chan readResult, 1)
+	go func() {
+		mb, err := w.ReadMultiBuffer()
+		c <- readResult{mb: mb, err: err}
+	}()
+	var mb buf.MultiBuffer
+	select {
+	case <-time.After(60 * time.Second):
+		common.Close(w.Reader)
+		common.Interrupt(w.Reader)
+		return M.Socksaddr{}, buf.ErrReadTimeout
+	case result := <-c:
+		if result.err != nil {
+			return M.Socksaddr{}, result.err
+		}
+		mb = result.mb
+	}
+
 	nb, bb := buf.SplitFirst(mb)
 	if bb == nil {
 		return M.Socksaddr{}, nil

@@ -12,7 +12,7 @@ import (
 	"github.com/GFW-knocker/Xray-core/common/errors"
 	"github.com/GFW-knocker/Xray-core/common/protocol"
 	ptls "github.com/GFW-knocker/Xray-core/common/protocol/tls"
-	"github.com/quic-go/quic-go/quicvarint"
+	"github.com/apernet/quic-go/quicvarint"
 	"golang.org/x/crypto/hkdf"
 )
 

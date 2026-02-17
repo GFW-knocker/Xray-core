@@ -19,6 +19,8 @@ import (
 	"github.com/GFW-knocker/Xray-core/features/routing"
 	"github.com/GFW-knocker/Xray-core/features/stats"
 	"github.com/GFW-knocker/Xray-core/proxy"
+	"github.com/GFW-knocker/Xray-core/proxy/hysteria/account"
+	hyCtx "github.com/GFW-knocker/Xray-core/proxy/hysteria/ctx"
 	"github.com/GFW-knocker/Xray-core/transport/internet"
 	"github.com/GFW-knocker/Xray-core/transport/internet/stat"
 	"github.com/GFW-knocker/Xray-core/transport/internet/tcp"
@@ -76,7 +78,25 @@ func (w *tcpWorker) callback(conn stat.Connection) {
 		case internet.SocketConfig_TProxy:
 			dest = net.DestinationFromAddr(conn.LocalAddr())
 		}
+
 		if dest.IsValid() {
+			// Check if try to connect to this inbound itself (can cause loopback)
+			var isLoopBack bool
+			if w.address == net.AnyIP || w.address == net.AnyIPv6 {
+				if dest.Port.Value() == w.port.Value() && IsLocal(dest.Address.IP()) {
+					isLoopBack = true
+				}
+			} else {
+				if w.hub.Addr().String() == dest.NetAddr() {
+					isLoopBack = true
+				}
+			}
+			if isLoopBack {
+				cancel()
+				conn.Close()
+				errors.LogError(ctx, errors.New("loopback connection detected"))
+				return
+			}
 			outbounds[0].Target = dest
 		}
 	}
@@ -91,6 +111,7 @@ func (w *tcpWorker) callback(conn stat.Connection) {
 	}
 	ctx = session.ContextWithInbound(ctx, &session.Inbound{
 		Source:  net.DestinationFromAddr(conn.RemoteAddr()),
+		Local:   net.DestinationFromAddr(conn.LocalAddr()),
 		Gateway: net.TCPDestination(w.address, w.port),
 		Tag:     w.tag,
 		Conn:    conn,
@@ -119,6 +140,13 @@ func (w *tcpWorker) Proxy() proxy.Inbound {
 
 func (w *tcpWorker) Start() error {
 	ctx := context.Background()
+
+	type HysteriaInboundValidator interface{ HysteriaInboundValidator() *account.Validator }
+	if v, ok := w.proxy.(HysteriaInboundValidator); ok {
+		ctx = hyCtx.ContextWithRequireDatagram(ctx, true)
+		ctx = hyCtx.ContextWithValidator(ctx, v.HysteriaInboundValidator())
+	}
+
 	hub, err := internet.ListenTCP(ctx, w.address, w.port, w.stream, func(conn stat.Connection) {
 		go w.callback(conn)
 	})
@@ -321,8 +349,18 @@ func (w *udpWorker) callback(b *buf.Buffer, source net.Destination, originalDest
 				outbounds[0].Target = originalDest
 			}
 			ctx = session.ContextWithOutbounds(ctx, outbounds)
+			local := net.DestinationFromAddr(w.hub.Addr())
+			if local.Address == net.AnyIP || local.Address == net.AnyIPv6 {
+				if source.Address.Family().IsIPv4() {
+					local.Address = net.AnyIP
+				} else if source.Address.Family().IsIPv6() {
+					local.Address = net.AnyIPv6
+				}
+			}
+
 			ctx = session.ContextWithInbound(ctx, &session.Inbound{
 				Source:  source,
+				Local:   local, // Due to some limitations, in UDP connections, localIP is always equal to listen interface IP
 				Gateway: net.UDPDestination(w.address, w.port),
 				Tag:     w.tag,
 			})
@@ -472,6 +510,7 @@ func (w *dsWorker) callback(conn stat.Connection) {
 	}
 	ctx = session.ContextWithInbound(ctx, &session.Inbound{
 		Source:  net.DestinationFromAddr(conn.RemoteAddr()),
+		Local:   net.DestinationFromAddr(conn.LocalAddr()),
 		Gateway: net.UnixDestination(w.address),
 		Tag:     w.tag,
 		Conn:    conn,
@@ -531,4 +570,19 @@ func (w *dsWorker) Close() error {
 	}
 
 	return nil
+}
+
+func IsLocal(ip net.IP) bool {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return false
+	}
+	for _, addr := range addrs {
+		if ipnet, ok := addr.(*net.IPNet); ok {
+			if ipnet.IP.Equal(ip) {
+				return true
+			}
+		}
+	}
+	return false
 }

@@ -1,6 +1,7 @@
 package conf
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -10,16 +11,27 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/GFW-knocker/Xray-core/common/errors"
 	"github.com/GFW-knocker/Xray-core/common/net"
 	"github.com/GFW-knocker/Xray-core/common/platform/filesystem"
-	"github.com/GFW-knocker/Xray-core/common/protocol"
 	"github.com/GFW-knocker/Xray-core/common/serial"
 	"github.com/GFW-knocker/Xray-core/transport/internet"
+	"github.com/GFW-knocker/Xray-core/transport/internet/finalmask/header/dns"
+	"github.com/GFW-knocker/Xray-core/transport/internet/finalmask/header/dtls"
+	"github.com/GFW-knocker/Xray-core/transport/internet/finalmask/header/srtp"
+	"github.com/GFW-knocker/Xray-core/transport/internet/finalmask/header/utp"
+	"github.com/GFW-knocker/Xray-core/transport/internet/finalmask/header/wechat"
+	"github.com/GFW-knocker/Xray-core/transport/internet/finalmask/header/wireguard"
+	"github.com/GFW-knocker/Xray-core/transport/internet/finalmask/mkcp/aes128gcm"
+	"github.com/GFW-knocker/Xray-core/transport/internet/finalmask/mkcp/original"
+	"github.com/GFW-knocker/Xray-core/transport/internet/finalmask/salamander"
+	"github.com/GFW-knocker/Xray-core/transport/internet/finalmask/xdns"
+	"github.com/GFW-knocker/Xray-core/transport/internet/finalmask/xicmp"
 	"github.com/GFW-knocker/Xray-core/transport/internet/httpupgrade"
+	"github.com/GFW-knocker/Xray-core/transport/internet/hysteria"
 	"github.com/GFW-knocker/Xray-core/transport/internet/kcp"
-	"github.com/GFW-knocker/Xray-core/transport/internet/quic"
 	"github.com/GFW-knocker/Xray-core/transport/internet/reality"
 	"github.com/GFW-knocker/Xray-core/transport/internet/splithttp"
 	"github.com/GFW-knocker/Xray-core/transport/internet/tcp"
@@ -29,16 +41,6 @@ import (
 )
 
 var (
-	kcpHeaderLoader = NewJSONConfigLoader(ConfigCreatorCache{
-		"none":         func() interface{} { return new(NoOpAuthenticator) },
-		"srtp":         func() interface{} { return new(SRTPAuthenticator) },
-		"utp":          func() interface{} { return new(UTPAuthenticator) },
-		"wechat-video": func() interface{} { return new(WechatVideoAuthenticator) },
-		"dtls":         func() interface{} { return new(DTLSAuthenticator) },
-		"wireguard":    func() interface{} { return new(WireguardAuthenticator) },
-		"dns":          func() interface{} { return new(DNSAuthenticator) },
-	}, "type", "")
-
 	tcpHeaderLoader = NewJSONConfigLoader(ConfigCreatorCache{
 		"none": func() interface{} { return new(NoOpConnectionAuthenticator) },
 		"http": func() interface{} { return new(Authenticator) },
@@ -63,9 +65,9 @@ func (c *KCPConfig) Build() (proto.Message, error) {
 
 	if c.Mtu != nil {
 		mtu := *c.Mtu
-		if mtu < 576 || mtu > 1460 {
-			return nil, errors.New("invalid mKCP MTU size: ", mtu).AtError()
-		}
+		// if mtu < 576 || mtu > 1460 {
+		// 	return nil, errors.New("invalid mKCP MTU size: ", mtu).AtError()
+		// }
 		config.Mtu = &kcp.MTU{Value: mtu}
 	}
 	if c.Tti != nil {
@@ -100,20 +102,8 @@ func (c *KCPConfig) Build() (proto.Message, error) {
 			config.WriteBuffer = &kcp.WriteBuffer{Size: 512 * 1024}
 		}
 	}
-	if len(c.HeaderConfig) > 0 {
-		headerConfig, _, err := kcpHeaderLoader.Load(c.HeaderConfig)
-		if err != nil {
-			return nil, errors.New("invalid mKCP header config.").Base(err).AtError()
-		}
-		ts, err := headerConfig.(Buildable).Build()
-		if err != nil {
-			return nil, errors.New("invalid mKCP header config").Base(err).AtError()
-		}
-		config.HeaderConfig = serial.ToTypedMessage(ts)
-	}
-
-	if c.Seed != nil {
-		config.Seed = &kcp.EncryptionSeed{Seed: *c.Seed}
+	if c.HeaderConfig != nil || c.Seed != nil {
+		return nil, errors.PrintRemovedFeatureError("mkcp header & seed", "finalmask/udp header-* & mkcp-original & mkcp-aes128gcm")
 	}
 
 	return config, nil
@@ -228,6 +218,19 @@ type SplitHTTPConfig struct {
 	Mode                 string            `json:"mode"`
 	Headers              map[string]string `json:"headers"`
 	XPaddingBytes        Int32Range        `json:"xPaddingBytes"`
+	XPaddingObfsMode     bool              `json:"xPaddingObfsMode"`
+	XPaddingKey          string            `json:"xPaddingKey"`
+	XPaddingHeader       string            `json:"xPaddingHeader"`
+	XPaddingPlacement    string            `json:"xPaddingPlacement"`
+	XPaddingMethod       string            `json:"xPaddingMethod"`
+	UplinkHTTPMethod     string            `json:"uplinkHTTPMethod"`
+	SessionPlacement     string            `json:"sessionPlacement"`
+	SessionKey           string            `json:"sessionKey"`
+	SeqPlacement         string            `json:"seqPlacement"`
+	SeqKey               string            `json:"seqKey"`
+	UplinkDataPlacement  string            `json:"uplinkDataPlacement"`
+	UplinkDataKey        string            `json:"uplinkDataKey"`
+	UplinkChunkSize      uint32            `json:"uplinkChunkSize"`
 	NoGRPCHeader         bool              `json:"noGRPCHeader"`
 	NoSSEHeader          bool              `json:"noSSEHeader"`
 	ScMaxEachPostBytes   Int32Range        `json:"scMaxEachPostBytes"`
@@ -287,12 +290,114 @@ func (c *SplitHTTPConfig) Build() (proto.Message, error) {
 		return nil, errors.New("xPaddingBytes cannot be disabled")
 	}
 
+	if c.XPaddingKey == "" {
+		c.XPaddingKey = "x_padding"
+	}
+
+	if c.XPaddingHeader == "" {
+		c.XPaddingHeader = "X-Padding"
+	}
+
+	switch c.XPaddingPlacement {
+	case "":
+		c.XPaddingPlacement = "queryInHeader"
+	case "cookie", "header", "query", "queryInHeader":
+	default:
+		return nil, errors.New("unsupported padding placement: " + c.XPaddingPlacement)
+	}
+
+	switch c.XPaddingMethod {
+	case "":
+		c.XPaddingMethod = "repeat-x"
+	case "repeat-x", "tokenish":
+	default:
+		return nil, errors.New("unsupported padding method: " + c.XPaddingMethod)
+	}
+
+	switch c.UplinkDataPlacement {
+	case "":
+		c.UplinkDataPlacement = "body"
+	case "body":
+	case "cookie", "header":
+		if c.Mode != "packet-up" {
+			return nil, errors.New("UplinkDataPlacement can be " + c.UplinkDataPlacement + " only in packet-up mode")
+		}
+	default:
+		return nil, errors.New("unsupported uplink data placement: " + c.UplinkDataPlacement)
+	}
+
+	if c.UplinkHTTPMethod == "" {
+		c.UplinkHTTPMethod = "POST"
+	}
+	c.UplinkHTTPMethod = strings.ToUpper(c.UplinkHTTPMethod)
+
+	if c.UplinkHTTPMethod == "GET" && c.Mode != "packet-up" {
+		return nil, errors.New("uplinkHTTPMethod can be GET only in packet-up mode")
+	}
+
+	switch c.SessionPlacement {
+	case "":
+		c.SessionPlacement = "path"
+	case "path", "cookie", "header", "query":
+	default:
+		return nil, errors.New("unsupported session placement: " + c.SessionPlacement)
+	}
+
+	switch c.SeqPlacement {
+	case "":
+		c.SeqPlacement = "path"
+	case "path", "cookie", "header", "query":
+		if c.SessionPlacement == "path" {
+			return nil, errors.New("SeqPlacement must be path when SessionPlacement is path")
+		}
+	default:
+		return nil, errors.New("unsupported seq placement: " + c.SeqPlacement)
+	}
+
+	if c.SessionPlacement != "path" && c.SessionKey == "" {
+		switch c.SessionPlacement {
+		case "cookie", "query":
+			c.SessionKey = "x_session"
+		case "header":
+			c.SessionKey = "X-Session"
+		}
+	}
+
+	if c.SeqPlacement != "path" && c.SeqKey == "" {
+		switch c.SeqPlacement {
+		case "cookie", "query":
+			c.SeqKey = "x_seq"
+		case "header":
+			c.SeqKey = "X-Seq"
+		}
+	}
+
+	if c.UplinkDataPlacement != "body" && c.UplinkDataKey == "" {
+		switch c.UplinkDataPlacement {
+		case "cookie":
+			c.UplinkDataKey = "x_data"
+		case "header":
+			c.UplinkDataKey = "X-Data"
+		}
+	}
+
+	if c.UplinkChunkSize == 0 {
+		switch c.UplinkDataPlacement {
+		case "cookie":
+			c.UplinkChunkSize = 3 * 1024 // 3KB
+		case "header":
+			c.UplinkChunkSize = 4 * 1024 // 4KB
+		}
+	} else if c.UplinkChunkSize < 64 {
+		c.UplinkChunkSize = 64
+	}
+
 	if c.Xmux.MaxConnections.To > 0 && c.Xmux.MaxConcurrency.To > 0 {
 		return nil, errors.New("maxConnections cannot be specified together with maxConcurrency")
 	}
 	if c.Xmux == (XmuxConfig{}) {
-		c.Xmux.MaxConcurrency.From = 16
-		c.Xmux.MaxConcurrency.To = 32
+		c.Xmux.MaxConcurrency.From = 1
+		c.Xmux.MaxConcurrency.To = 1
 		c.Xmux.HMaxRequestTimes.From = 600
 		c.Xmux.HMaxRequestTimes.To = 900
 		c.Xmux.HMaxReusableSecs.From = 1800
@@ -305,6 +410,19 @@ func (c *SplitHTTPConfig) Build() (proto.Message, error) {
 		Mode:                 c.Mode,
 		Headers:              c.Headers,
 		XPaddingBytes:        newRangeConfig(c.XPaddingBytes),
+		XPaddingObfsMode:     c.XPaddingObfsMode,
+		XPaddingKey:          c.XPaddingKey,
+		XPaddingHeader:       c.XPaddingHeader,
+		XPaddingPlacement:    c.XPaddingPlacement,
+		XPaddingMethod:       c.XPaddingMethod,
+		UplinkHTTPMethod:     c.UplinkHTTPMethod,
+		SessionPlacement:     c.SessionPlacement,
+		SeqPlacement:         c.SeqPlacement,
+		SessionKey:           c.SessionKey,
+		SeqKey:               c.SeqKey,
+		UplinkDataPlacement:  c.UplinkDataPlacement,
+		UplinkDataKey:        c.UplinkDataKey,
+		UplinkChunkSize:      c.UplinkChunkSize,
 		NoGRPCHeader:         c.NoGRPCHeader,
 		NoSSEHeader:          c.NoSSEHeader,
 		ScMaxEachPostBytes:   newRangeConfig(c.ScMaxEachPostBytes),
@@ -333,6 +451,9 @@ func (c *SplitHTTPConfig) Build() (proto.Message, error) {
 
 	return config, nil
 }
+
+
+
 
 type QUICConfig struct {
 	Header   json.RawMessage `json:"header"`
@@ -370,6 +491,219 @@ func (c *QUICConfig) Build() (proto.Message, error) {
 
 	config.Security = &protocol.SecurityConfig{
 		Type: st,
+	}
+
+	return config, nil
+}
+
+
+
+const (
+	Byte     = 1
+	Kilobyte = 1024 * Byte
+	Megabyte = 1024 * Kilobyte
+	Gigabyte = 1024 * Megabyte
+	Terabyte = 1024 * Gigabyte
+)
+
+type Bandwidth string
+
+func (b Bandwidth) Bps() (uint64, error) {
+	s := strings.TrimSpace(strings.ToLower(string(b)))
+	if s == "" {
+		return 0, nil
+	}
+
+	idx := len(s)
+	for i, c := range s {
+		if (c < '0' || c > '9') && c != '.' {
+			idx = i
+			break
+		}
+	}
+
+	numStr := s[:idx]
+	unit := strings.TrimSpace(s[idx:])
+
+	val, err := strconv.ParseFloat(numStr, 64)
+	if err != nil {
+		return 0, err
+	}
+
+	mul := uint64(1)
+	switch unit {
+	case "", "b", "bps":
+		mul = Byte
+	case "k", "kb", "kbps":
+		mul = Kilobyte
+	case "m", "mb", "mbps":
+		mul = Megabyte
+	case "g", "gb", "gbps":
+		mul = Gigabyte
+	case "t", "tb", "tbps":
+		mul = Terabyte
+	default:
+		return 0, errors.New("unsupported unit: " + unit)
+	}
+
+	return uint64(val*float64(mul)) / 8, nil
+}
+
+type UdpHop struct {
+	PortList json.RawMessage `json:"port"`
+	Interval *Int32Range     `json:"interval"`
+}
+
+type Masquerade struct {
+	Type string `json:"type"`
+
+	Dir string `json:"dir"`
+
+	Url         string `json:"url"`
+	RewriteHost bool   `json:"rewriteHost"`
+	Insecure    bool   `json:"insecure"`
+
+	Content    string            `json:"content"`
+	Headers    map[string]string `json:"headers"`
+	StatusCode int32             `json:"statusCode"`
+}
+
+type HysteriaConfig struct {
+	Version    int32     `json:"version"`
+	Auth       string    `json:"auth"`
+	Congestion string    `json:"congestion"`
+	Up         Bandwidth `json:"up"`
+	Down       Bandwidth `json:"down"`
+	UdpHop     UdpHop    `json:"udphop"`
+
+	InitStreamReceiveWindow     uint64 `json:"initStreamReceiveWindow"`
+	MaxStreamReceiveWindow      uint64 `json:"maxStreamReceiveWindow"`
+	InitConnectionReceiveWindow uint64 `json:"initConnectionReceiveWindow"`
+	MaxConnectionReceiveWindow  uint64 `json:"maxConnectionReceiveWindow"`
+	MaxIdleTimeout              int64  `json:"maxIdleTimeout"`
+	KeepAlivePeriod             int64  `json:"keepAlivePeriod"`
+	DisablePathMTUDiscovery     bool   `json:"disablePathMTUDiscovery"`
+	MaxIncomingStreams          int64  `json:"maxIncomingStreams"`
+
+	UdpIdleTimeout int64      `json:"udpIdleTimeout"`
+	Masquerade     Masquerade `json:"masquerade"`
+}
+
+func (c *HysteriaConfig) Build() (proto.Message, error) {
+	if c.Version != 2 {
+		return nil, errors.New("version != 2")
+	}
+
+	up, err := c.Up.Bps()
+	if err != nil {
+		return nil, err
+	}
+	down, err := c.Down.Bps()
+	if err != nil {
+		return nil, err
+	}
+
+	c.Congestion = strings.ToLower(c.Congestion)
+	if c.Congestion == "force-brutal" && up == 0 {
+		return nil, errors.New("force-brutal require up")
+	}
+
+	var hop *PortList
+	if err := json.Unmarshal(c.UdpHop.PortList, &hop); err != nil {
+		hop = &PortList{}
+	}
+
+	var inertvalMin, inertvalMax int64
+	if c.UdpHop.Interval != nil {
+		inertvalMin = int64(c.UdpHop.Interval.From)
+		inertvalMax = int64(c.UdpHop.Interval.To)
+	}
+
+	if up > 0 && up < 65536 {
+		return nil, errors.New("Up must be at least 65536 bytes per second")
+	}
+	if down > 0 && down < 65536 {
+		return nil, errors.New("Down must be at least 65536 bytes per second")
+	}
+	if (inertvalMin != 0 && inertvalMin < 5) || (inertvalMax != 0 && inertvalMax < 5) {
+		return nil, errors.New("Interval must be at least 5")
+	}
+
+	if c.InitStreamReceiveWindow > 0 && c.InitStreamReceiveWindow < 16384 {
+		return nil, errors.New("InitStreamReceiveWindow must be at least 16384")
+	}
+	if c.MaxStreamReceiveWindow > 0 && c.MaxStreamReceiveWindow < 16384 {
+		return nil, errors.New("MaxStreamReceiveWindow must be at least 16384")
+	}
+	if c.InitConnectionReceiveWindow > 0 && c.InitConnectionReceiveWindow < 16384 {
+		return nil, errors.New("InitConnectionReceiveWindow must be at least 16384")
+	}
+	if c.MaxConnectionReceiveWindow > 0 && c.MaxConnectionReceiveWindow < 16384 {
+		return nil, errors.New("MaxConnectionReceiveWindow must be at least 16384")
+	}
+	if c.MaxIdleTimeout != 0 && (c.MaxIdleTimeout < 4 || c.MaxIdleTimeout > 120) {
+		return nil, errors.New("MaxIdleTimeout must be between 4 and 120")
+	}
+	if c.KeepAlivePeriod != 0 && (c.KeepAlivePeriod < 2 || c.KeepAlivePeriod > 60) {
+		return nil, errors.New("KeepAlivePeriod must be between 2 and 60")
+	}
+	if c.MaxIncomingStreams != 0 && c.MaxIncomingStreams < 8 {
+		return nil, errors.New("MaxIncomingStreams must be at least 8")
+	}
+	if c.UdpIdleTimeout != 0 && (c.UdpIdleTimeout < 2 || c.UdpIdleTimeout > 600) {
+		return nil, errors.New("UdpIdleTimeout must be between 2 and 600")
+	}
+
+	config := &hysteria.Config{}
+	config.Version = c.Version
+	config.Auth = c.Auth
+	config.Congestion = c.Congestion
+	config.Up = up
+	config.Down = down
+	config.Ports = hop.Build().Ports()
+	config.IntervalMin = inertvalMin
+	config.IntervalMax = inertvalMax
+	config.InitStreamReceiveWindow = c.InitStreamReceiveWindow
+	config.MaxStreamReceiveWindow = c.MaxStreamReceiveWindow
+	config.InitConnReceiveWindow = c.InitConnectionReceiveWindow
+	config.MaxConnReceiveWindow = c.MaxConnectionReceiveWindow
+	config.MaxIdleTimeout = c.MaxIdleTimeout
+	config.KeepAlivePeriod = c.KeepAlivePeriod
+	config.DisablePathMtuDiscovery = c.DisablePathMTUDiscovery
+	config.MaxIncomingStreams = c.MaxIncomingStreams
+	config.UdpIdleTimeout = c.UdpIdleTimeout
+	config.MasqType = c.Masquerade.Type
+	config.MasqFile = c.Masquerade.Dir
+	config.MasqUrl = c.Masquerade.Url
+	config.MasqUrlRewriteHost = c.Masquerade.RewriteHost
+	config.MasqUrlInsecure = c.Masquerade.Insecure
+	config.MasqString = c.Masquerade.Content
+	config.MasqStringHeaders = c.Masquerade.Headers
+	config.MasqStringStatusCode = c.Masquerade.StatusCode
+
+	if config.InitStreamReceiveWindow == 0 {
+		config.InitStreamReceiveWindow = 8388608
+	}
+	if config.MaxStreamReceiveWindow == 0 {
+		config.MaxStreamReceiveWindow = 8388608
+	}
+	if config.InitConnReceiveWindow == 0 {
+		config.InitConnReceiveWindow = 8388608 * 5 / 2
+	}
+	if config.MaxConnReceiveWindow == 0 {
+		config.MaxConnReceiveWindow = 8388608 * 5 / 2
+	}
+	if config.MaxIdleTimeout == 0 {
+		config.MaxIdleTimeout = 30
+	}
+	// if config.KeepAlivePeriod == 0 {
+	// 	config.KeepAlivePeriod = 10
+	// }
+	if config.MaxIncomingStreams == 0 {
+		config.MaxIncomingStreams = 1024
+	}
+	if config.UdpIdleTimeout == 0 {
+		config.UdpIdleTimeout = 60
 	}
 
 	return config, nil
@@ -438,27 +772,26 @@ func (c *TLSCertConfig) Build() (*tls.Certificate, error) {
 }
 
 type TLSConfig struct {
-	Insecure                             bool             `json:"allowInsecure"`
-	Certs                                []*TLSCertConfig `json:"certificates"`
-	ServerName                           string           `json:"serverName"`
-	ALPN                                 *StringList      `json:"alpn"`
-	EnableSessionResumption              bool             `json:"enableSessionResumption"`
-	DisableSystemRoot                    bool             `json:"disableSystemRoot"`
-	MinVersion                           string           `json:"minVersion"`
-	MaxVersion                           string           `json:"maxVersion"`
-	CipherSuites                         string           `json:"cipherSuites"`
-	Fingerprint                          string           `json:"fingerprint"`
-	RejectUnknownSNI                     bool             `json:"rejectUnknownSni"`
-	PinnedPeerCertificateChainSha256     *[]string        `json:"pinnedPeerCertificateChainSha256"`
-	PinnedPeerCertificatePublicKeySha256 *[]string        `json:"pinnedPeerCertificatePublicKeySha256"`
-	CurvePreferences                     *StringList      `json:"curvePreferences"`
-	MasterKeyLog                         string           `json:"masterKeyLog"`
-	ServerNameToVerify                   string           `json:"serverNameToVerify"`
-	VerifyPeerCertInNames                []string         `json:"verifyPeerCertInNames"`
-	ECHServerKeys                        string           `json:"echServerKeys"`
-	ECHConfigList                        string           `json:"echConfigList"`
-	ECHForceQuery                        string           `json:"echForceQuery"`
-	ECHSocketSettings                    *SocketConfig    `json:"echSockopt"`
+	AllowInsecure           bool             `json:"allowInsecure"`
+	Certs                   []*TLSCertConfig `json:"certificates"`
+	ServerName              string           `json:"serverName"`
+	ALPN                    *StringList      `json:"alpn"`
+	EnableSessionResumption bool             `json:"enableSessionResumption"`
+	DisableSystemRoot       bool             `json:"disableSystemRoot"`
+	MinVersion              string           `json:"minVersion"`
+	MaxVersion              string           `json:"maxVersion"`
+	CipherSuites            string           `json:"cipherSuites"`
+	Fingerprint             string           `json:"fingerprint"`
+	RejectUnknownSNI        bool             `json:"rejectUnknownSni"`
+	CurvePreferences        *StringList      `json:"curvePreferences"`
+	MasterKeyLog            string           `json:"masterKeyLog"`
+	PinnedPeerCertSha256    string           `json:"pinnedPeerCertSha256"`
+	VerifyPeerCertByName    string           `json:"verifyPeerCertByName"`
+	VerifyPeerCertInNames   []string         `json:"verifyPeerCertInNames"`
+	ECHServerKeys           string           `json:"echServerKeys"`
+	ECHConfigList           string           `json:"echConfigList"`
+	ECHForceQuery           string           `json:"echForceQuery"`
+	ECHSocketSettings       *SocketConfig    `json:"echSockopt"`
 }
 
 // Build implements Buildable.
@@ -473,7 +806,6 @@ func (c *TLSConfig) Build() (proto.Message, error) {
 		config.Certificate[idx] = cert
 	}
 	serverName := c.ServerName
-	config.AllowInsecure = c.Insecure
 	if len(c.ServerName) > 0 {
 		config.ServerName = serverName
 	}
@@ -500,35 +832,46 @@ func (c *TLSConfig) Build() (proto.Message, error) {
 		return nil, errors.New(`unknown "fingerprint": `, config.Fingerprint)
 	}
 	config.RejectUnknownSni = c.RejectUnknownSNI
-
-	if c.PinnedPeerCertificateChainSha256 != nil {
-		config.PinnedPeerCertificateChainSha256 = [][]byte{}
-		for _, v := range *c.PinnedPeerCertificateChainSha256 {
-			hashValue, err := base64.StdEncoding.DecodeString(v)
-			if err != nil {
-				return nil, err
-			}
-			config.PinnedPeerCertificateChainSha256 = append(config.PinnedPeerCertificateChainSha256, hashValue)
-		}
-	}
-
-	if c.PinnedPeerCertificatePublicKeySha256 != nil {
-		config.PinnedPeerCertificatePublicKeySha256 = [][]byte{}
-		for _, v := range *c.PinnedPeerCertificatePublicKeySha256 {
-			hashValue, err := base64.StdEncoding.DecodeString(v)
-			if err != nil {
-				return nil, err
-			}
-			config.PinnedPeerCertificatePublicKeySha256 = append(config.PinnedPeerCertificatePublicKeySha256, hashValue)
-		}
-	}
-
 	config.MasterKeyLog = c.MasterKeyLog
 
-	if c.ServerNameToVerify != "" {
-		return nil, errors.PrintRemovedFeatureError(`"serverNameToVerify"`, `"verifyPeerCertInNames"`)
+	if c.AllowInsecure {
+		if time.Now().After(time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)) {
+			return nil, errors.PrintRemovedFeatureError(`"allowInsecure"`, `"pinnedPeerCertSha256"`)
+		} else {
+			errors.LogWarning(context.Background(), `"allowInsecure" will be removed automatically after 2026-06-01, please use "pinnedPeerCertSha256"(pcs) and "verifyPeerCertByName"(vcn) instead, PLEASE CONTACT YOUR SERVICE PROVIDER (AIRPORT)`)
+			config.AllowInsecure = true
+		}
 	}
-	config.VerifyPeerCertInNames = c.VerifyPeerCertInNames
+	if c.PinnedPeerCertSha256 != "" {
+		for v := range strings.SplitSeq(c.PinnedPeerCertSha256, ",") {
+			v = strings.TrimSpace(v)
+			if v == "" {
+				continue
+			}
+			// remove colons for OpenSSL format
+			hashValue, err := hex.DecodeString(strings.ReplaceAll(v, ":", ""))
+			if err != nil {
+				return nil, err
+			}
+			if len(hashValue) != 32 {
+				return nil, errors.New("incorrect pinnedPeerCertSha256 length: ", v)
+			}
+			config.PinnedPeerCertSha256 = append(config.PinnedPeerCertSha256, hashValue)
+		}
+	}
+
+	if c.VerifyPeerCertInNames != nil {
+		return nil, errors.PrintRemovedFeatureError(`"verifyPeerCertInNames"`, `"verifyPeerCertByName"`)
+	}
+	if c.VerifyPeerCertByName != "" {
+		for v := range strings.SplitSeq(c.VerifyPeerCertByName, ",") {
+			v = strings.TrimSpace(v)
+			if v == "" {
+				continue
+			}
+			config.VerifyPeerCertByName = append(config.VerifyPeerCertByName, v)
+		}
+	}
 
 	if c.ECHServerKeys != "" {
 		EchPrivateKey, err := base64.StdEncoding.DecodeString(c.ECHServerKeys)
@@ -671,6 +1014,9 @@ func (c *REALITYConfig) Build() (proto.Message, error) {
 		}
 		config.ShortIds = make([][]byte, len(c.ShortIds))
 		for i, s := range c.ShortIds {
+			if len(s) > 16 {
+				return nil, errors.New(`too long "shortIds[`, i, `]": `, s)
+			}
 			config.ShortIds[i] = make([]byte, 8)
 			if _, err = hex.Decode(config.ShortIds[i], []byte(s)); err != nil {
 				return nil, errors.New(`invalid "shortIds[`, i, `]": `, s)
@@ -721,6 +1067,9 @@ func (c *REALITYConfig) Build() (proto.Message, error) {
 		}
 		if len(c.ShortIds) != 0 {
 			return nil, errors.New(`non-empty "shortIds", please use "shortId" instead`)
+		}
+		if len(c.ShortIds) > 16 {
+			return nil, errors.New(`too long "shortId": `, c.ShortId)
 		}
 		config.ShortId = make([]byte, 8)
 		if _, err = hex.Decode(config.ShortId, []byte(c.ShortId)); err != nil {
@@ -777,19 +1126,21 @@ func (p TransportProtocol) Build() (string, error) {
 	case "kcp", "mkcp":
 		return "mkcp", nil
 	case "grpc":
-		errors.PrintDeprecatedFeatureWarning("gRPC transport (with unnecessary costs, etc.)", "XHTTP stream-up H2")
+		errors.PrintNonRemovalDeprecatedFeatureWarning("gRPC transport (with unnecessary costs, etc.)", "XHTTP stream-up H2")
 		return "grpc", nil
 	case "ws", "websocket":
-		errors.PrintDeprecatedFeatureWarning("WebSocket transport (with ALPN http/1.1, etc.)", "XHTTP H2 & H3")
+		errors.PrintNonRemovalDeprecatedFeatureWarning("WebSocket transport (with ALPN http/1.1, etc.)", "XHTTP H2 & H3")
 		return "websocket", nil
 	case "httpupgrade":
-		errors.PrintDeprecatedFeatureWarning("HTTPUpgrade transport (with ALPN http/1.1, etc.)", "XHTTP H2 & H3")
+		errors.PrintNonRemovalDeprecatedFeatureWarning("HTTPUpgrade transport (with ALPN http/1.1, etc.)", "XHTTP H2 & H3")
 		return "httpupgrade", nil
 	case "h2", "h3", "http":
 		return "", errors.PrintRemovedFeatureError("HTTP transport (without header padding, etc.)", "XHTTP stream-one H2 & H3")
 	case "quic":
 		errors.PrintRemovedFeatureError("QUIC transport (without web service, etc.)", "XHTTP stream-one H3")
 		return "quic", nil
+	case "hysteria":
+		return "hysteria", nil
 	default:
 		return "", errors.New("Config: unknown transport protocol: ", p)
 	}
@@ -848,6 +1199,7 @@ type SocketConfig struct {
 	CustomSockopt         []*CustomSockoptConfig `json:"customSockopt"`
 	AddressPortStrategy   string                 `json:"addressPortStrategy"`
 	HappyEyeballsSettings *HappyEyeballsConfig   `json:"happyEyeballs"`
+	TrustedXForwardedFor  []string               `json:"trustedXForwardedFor"`
 }
 
 // Build implements Buildable.
@@ -967,7 +1319,158 @@ func (c *SocketConfig) Build() (*internet.SocketConfig, error) {
 		CustomSockopt:        customSockopts,
 		AddressPortStrategy:  addressPortStrategy,
 		HappyEyeballs:        happyEyeballs,
+		TrustedXForwardedFor: c.TrustedXForwardedFor,
 	}, nil
+}
+
+var (
+	udpmaskLoader = NewJSONConfigLoader(ConfigCreatorCache{
+		"header-dns":       func() interface{} { return new(Dns) },
+		"header-dtls":      func() interface{} { return new(Dtls) },
+		"header-srtp":      func() interface{} { return new(Srtp) },
+		"header-utp":       func() interface{} { return new(Utp) },
+		"header-wechat":    func() interface{} { return new(Wechat) },
+		"header-wireguard": func() interface{} { return new(Wireguard) },
+		"mkcp-original":    func() interface{} { return new(Original) },
+		"mkcp-aes128gcm":   func() interface{} { return new(Aes128Gcm) },
+		"salamander":       func() interface{} { return new(Salamander) },
+		"xdns":             func() interface{} { return new(Xdns) },
+		"xicmp":            func() interface{} { return new(Xicmp) },
+	}, "type", "settings")
+)
+
+type Dns struct {
+	Domain string `json:"domain"`
+}
+
+func (c *Dns) Build() (proto.Message, error) {
+	config := &dns.Config{}
+	config.Domain = "www.baidu.com"
+
+	if len(c.Domain) > 0 {
+		config.Domain = c.Domain
+	}
+
+	return config, nil
+}
+
+type Dtls struct{}
+
+func (c *Dtls) Build() (proto.Message, error) {
+	return &dtls.Config{}, nil
+}
+
+type Srtp struct{}
+
+func (c *Srtp) Build() (proto.Message, error) {
+	return &srtp.Config{}, nil
+}
+
+type Utp struct{}
+
+func (c *Utp) Build() (proto.Message, error) {
+	return &utp.Config{}, nil
+}
+
+type Wechat struct{}
+
+func (c *Wechat) Build() (proto.Message, error) {
+	return &wechat.Config{}, nil
+}
+
+type Wireguard struct{}
+
+func (c *Wireguard) Build() (proto.Message, error) {
+	return &wireguard.Config{}, nil
+}
+
+type Original struct{}
+
+func (c *Original) Build() (proto.Message, error) {
+	return &original.Config{}, nil
+}
+
+type Aes128Gcm struct {
+	Password string `json:"password"`
+}
+
+func (c *Aes128Gcm) Build() (proto.Message, error) {
+	return &aes128gcm.Config{
+		Password: c.Password,
+	}, nil
+}
+
+type Salamander struct {
+	Password string `json:"password"`
+}
+
+func (c *Salamander) Build() (proto.Message, error) {
+	config := &salamander.Config{}
+	config.Password = c.Password
+	return config, nil
+}
+
+type Xdns struct {
+	Domain string `json:"domain"`
+}
+
+func (c *Xdns) Build() (proto.Message, error) {
+	if c.Domain == "" {
+		return nil, errors.New("empty domain")
+	}
+
+	return &xdns.Config{
+		Domain: c.Domain,
+	}, nil
+}
+
+type Xicmp struct {
+	ListenIp string `json:"listenIp"`
+	Id       uint16 `json:"id"`
+}
+
+func (c *Xicmp) Build() (proto.Message, error) {
+	config := &xicmp.Config{
+		Ip: c.ListenIp,
+		Id: int32(c.Id),
+	}
+
+	if config.Ip == "" {
+		config.Ip = "0.0.0.0"
+	}
+
+	return config, nil
+}
+
+type Mask struct {
+	Type     string           `json:"type"`
+	Settings *json.RawMessage `json:"settings"`
+}
+
+func (c *Mask) Build(tcp bool) (proto.Message, error) {
+	loader := udpmaskLoader
+	if tcp {
+		return nil, errors.New("")
+	}
+
+	settings := []byte("{}")
+	if c.Settings != nil {
+		settings = ([]byte)(*c.Settings)
+	}
+	rawConfig, err := loader.LoadWithID(settings, c.Type)
+	if err != nil {
+		return nil, err
+	}
+	ts, err := rawConfig.(Buildable).Build()
+	if err != nil {
+		return nil, err
+	}
+	return ts, nil
+}
+
+type FinalMask struct {
+	Tcp []Mask `json:"tcp"`
+	Udp []Mask `json:"udp"`
 }
 
 type StreamConfig struct {
@@ -975,6 +1478,7 @@ type StreamConfig struct {
 	Port                uint16             `json:"port"`
 	Network             *TransportProtocol `json:"network"`
 	Security            string             `json:"security"`
+	FinalMask           *FinalMask         `json:"finalmask"`
 	TLSSettings         *TLSConfig         `json:"tlsSettings"`
 	REALITYSettings     *REALITYConfig     `json:"realitySettings"`
 	RAWSettings         *TCPConfig         `json:"rawSettings"`
@@ -986,6 +1490,7 @@ type StreamConfig struct {
 	GRPCSettings        *GRPCConfig        `json:"grpcSettings"`
 	WSSettings          *WebSocketConfig   `json:"wsSettings"`
 	HTTPUPGRADESettings *HttpUpgradeConfig `json:"httpupgradeSettings"`
+	HysteriaSettings    *HysteriaConfig    `json:"hysteriaSettings"`
 	SocketSettings      *SocketConfig      `json:"sockopt"`
 }
 
@@ -1005,6 +1510,7 @@ func (c *StreamConfig) Build() (*internet.StreamConfig, error) {
 		}
 		config.ProtocolName = protocol
 	}
+
 	switch strings.ToLower(c.Security) {
 	case "", "none":
 	case "tls":
@@ -1038,6 +1544,7 @@ func (c *StreamConfig) Build() (*internet.StreamConfig, error) {
 	default:
 		return nil, errors.New(`Unknown security "` + c.Security + `".`)
 	}
+
 	if c.RAWSettings != nil {
 		c.TCPSettings = c.RAWSettings
 	}
@@ -1114,6 +1621,16 @@ func (c *StreamConfig) Build() (*internet.StreamConfig, error) {
 			Settings:     serial.ToTypedMessage(hs),
 		})
 	}
+	if c.HysteriaSettings != nil {
+		hs, err := c.HysteriaSettings.Build()
+		if err != nil {
+			return nil, errors.New("Failed to build Hysteria config.").Base(err)
+		}
+		config.TransportSettings = append(config.TransportSettings, &internet.TransportConfig{
+			ProtocolName: "hysteria",
+			Settings:     serial.ToTypedMessage(hs),
+		})
+	}
 	if c.SocketSettings != nil {
 		ss, err := c.SocketSettings.Build()
 		if err != nil {
@@ -1121,6 +1638,24 @@ func (c *StreamConfig) Build() (*internet.StreamConfig, error) {
 		}
 		config.SocketSettings = ss
 	}
+
+	if c.FinalMask != nil {
+		for _, mask := range c.FinalMask.Tcp {
+			u, err := mask.Build(true)
+			if err != nil {
+				return nil, errors.New("failed to build mask with type ", mask.Type).Base(err)
+			}
+			config.Tcpmasks = append(config.Tcpmasks, serial.ToTypedMessage(u))
+		}
+		for _, mask := range c.FinalMask.Udp {
+			u, err := mask.Build(false)
+			if err != nil {
+				return nil, errors.New("failed to build mask with type ", mask.Type).Base(err)
+			}
+			config.Udpmasks = append(config.Udpmasks, serial.ToTypedMessage(u))
+		}
+	}
+
 	return config, nil
 }
 

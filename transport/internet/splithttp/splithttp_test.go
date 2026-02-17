@@ -1,6 +1,7 @@
 package splithttp_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"fmt"
@@ -131,6 +132,8 @@ func Test_ListenXHAndDial_TLS(t *testing.T) {
 
 	start := time.Now()
 
+	ct, ctHash := cert.MustGenerate(nil, cert.CommonName("localhost"))
+
 	streamSettings := &internet.MemoryStreamConfig{
 		ProtocolName: "splithttp",
 		ProtocolSettings: &Config{
@@ -138,8 +141,8 @@ func Test_ListenXHAndDial_TLS(t *testing.T) {
 		},
 		SecurityType: "tls",
 		SecuritySettings: &tls.Config{
-			AllowInsecure: true,
-			Certificate:   []*tls.Certificate{tls.ParseCertificate(cert.MustGenerate(nil, cert.CommonName("localhost")))},
+			Certificate:          []*tls.Certificate{tls.ParseCertificate(ct)},
+			PinnedPeerCertSha256: [][]byte{ctHash[:]},
 		},
 	}
 	listen, err := ListenXH(context.Background(), net.LocalHostIP, listenPort, streamSettings, func(conn stat.Connection) {
@@ -227,6 +230,8 @@ func Test_ListenXHAndDial_QUIC(t *testing.T) {
 
 	start := time.Now()
 
+	ct, ctHash := cert.MustGenerate(nil, cert.CommonName("localhost"))
+
 	streamSettings := &internet.MemoryStreamConfig{
 		ProtocolName: "splithttp",
 		ProtocolSettings: &Config{
@@ -234,9 +239,9 @@ func Test_ListenXHAndDial_QUIC(t *testing.T) {
 		},
 		SecurityType: "tls",
 		SecuritySettings: &tls.Config{
-			AllowInsecure: true,
-			Certificate:   []*tls.Certificate{tls.ParseCertificate(cert.MustGenerate(nil, cert.CommonName("localhost")))},
-			NextProtocol:  []string{"h3"},
+			Certificate:          []*tls.Certificate{tls.ParseCertificate(ct)},
+			PinnedPeerCertSha256: [][]byte{ctHash[:]},
+			NextProtocol:         []string{"h3"},
 		},
 	}
 
@@ -421,18 +426,12 @@ func Test_maxUpload(t *testing.T) {
 		},
 	}
 
-	var uploadSize int
+	uploadReceived := make([]byte, 10001)
 	listen, err := ListenXH(context.Background(), net.LocalHostIP, listenPort, streamSettings, func(conn stat.Connection) {
 		go func(c stat.Connection) {
 			defer c.Close()
-			var b [10240]byte
 			c.SetReadDeadline(time.Now().Add(2 * time.Second))
-			n, err := c.Read(b[:])
-			if err != nil {
-				return
-			}
-
-			uploadSize = n
+			io.ReadFull(c, uploadReceived)
 
 			common.Must2(c.Write([]byte("Response")))
 		}(conn)
@@ -441,10 +440,12 @@ func Test_maxUpload(t *testing.T) {
 	ctx := context.Background()
 
 	conn, err := Dial(ctx, net.TCPDestination(net.DomainAddress("localhost"), listenPort), streamSettings)
+	common.Must(err)
 
 	// send a slightly too large upload
-	var upload [10001]byte
-	_, err = conn.Write(upload[:])
+	upload := make([]byte, 10001)
+	rand.Read(upload)
+	_, err = conn.Write(upload)
 	common.Must(err)
 
 	var b [10240]byte
@@ -455,8 +456,8 @@ func Test_maxUpload(t *testing.T) {
 	}
 	common.Must(conn.Close())
 
-	if uploadSize > 10000 || uploadSize == 0 {
-		t.Error("incorrect upload size: ", uploadSize)
+	if !bytes.Equal(upload, uploadReceived) {
+		t.Error("incorrect upload", upload, uploadReceived)
 	}
 
 	common.Must(listen.Close())

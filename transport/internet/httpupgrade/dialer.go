@@ -10,6 +10,7 @@ import (
 	"github.com/GFW-knocker/Xray-core/common"
 	"github.com/GFW-knocker/Xray-core/common/errors"
 	"github.com/GFW-knocker/Xray-core/common/net"
+	"github.com/GFW-knocker/Xray-core/common/utils"
 	"github.com/GFW-knocker/Xray-core/transport/internet"
 	"github.com/GFW-knocker/Xray-core/transport/internet/stat"
 	"github.com/GFW-knocker/Xray-core/transport/internet/tls"
@@ -85,6 +86,9 @@ func dialhttpUpgrade(ctx context.Context, dest net.Destination, streamSettings *
 	}
 	for key, value := range transportConfiguration.Header {
 		AddHeader(req.Header, key, value)
+	}
+	if req.Header.Get("User-Agent") == "" {
+		req.Header.Set("User-Agent", utils.ChromeUA)
 	}
 	req.Header.Set("Connection", "Upgrade")
 	req.Header.Set("Upgrade", "websocket")

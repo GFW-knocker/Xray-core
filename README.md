@@ -4,6 +4,14 @@
 
 [README](https://github.com/XTLS/Xray-core#readme) is open, so feel free to submit your project [here](https://github.com/XTLS/Xray-core/pulls).
 
+## Sponsors
+
+[![Remnawave](https://github.com/user-attachments/assets/a22d34ae-01ee-441c-843a-85356748ed1e)](https://docs.rw)
+
+[![Happ](https://github.com/user-attachments/assets/14055dab-e8bb-48bd-89e8-962709e4098e)](https://happ.su)
+
+[**Sponsor Xray-core**](https://github.com/XTLS/Xray-core/issues/3668)
+
 ## Donation & NFTs
 refer to original repo if you want to donate them:<p>
 https://github.com/XTLS/Xray-core
@@ -37,7 +45,10 @@ https://github.com/XTLS/Xray-core
   - [3x-ui](https://github.com/MHSanaei/3x-ui)
   - [Marzban](https://github.com/Gozargah/Marzban)
   - [Xray-UI](https://github.com/qist/xray-ui)
+  - [X-Panel](https://github.com/xeefei/X-Panel)
+  - [Marzban](https://github.com/Gozargah/Marzban)
   - [Hiddify](https://github.com/hiddify/Hiddify-Manager)
+  - [TX-UI](https://github.com/AghayeCoder/tx-ui)
 - One Click
   - [Xray-REALITY](https://github.com/zxcvos/Xray-script), [xray-reality](https://github.com/sajjaddg/xray-reality), [reality-ezpz](https://github.com/aleskxyz/reality-ezpz)
   - [Xray_bash_onekey](https://github.com/hello-yunshu/Xray_bash_onekey), [XTool](https://github.com/LordPenguin666/XTool), [VPainLess](https://github.com/vpainless/vpainless)
@@ -68,9 +79,12 @@ https://github.com/XTLS/Xray-core
 ## GUI Clients
 
 - OpenWrt
-  - [PassWall](https://github.com/xiaorouji/openwrt-passwall), [PassWall 2](https://github.com/xiaorouji/openwrt-passwall2)
+  - [PassWall](https://github.com/Openwrt-Passwall/openwrt-passwall), [PassWall 2](https://github.com/Openwrt-Passwall/openwrt-passwall2)
   - [ShadowSocksR Plus+](https://github.com/fw876/helloworld)
   - [luci-app-xray](https://github.com/yichya/luci-app-xray) ([openwrt-xray](https://github.com/yichya/openwrt-xray))
+- Asuswrt-Merlin
+  - [XRAYUI](https://github.com/DanielLavrushin/asuswrt-merlin-xrayui)
+  - [fancyss](https://github.com/hq450/fancyss)
 - Windows
   - [v2rayN](https://github.com/2dust/v2rayN)
   - [Furious](https://github.com/LorenEteval/Furious)
@@ -84,28 +98,33 @@ https://github.com/XTLS/Xray-core
   - [SimpleXray](https://github.com/lhear/SimpleXray)
   - [AnyPortal](https://github.com/AnyPortal/AnyPortal)
 - iOS & macOS arm64 & tvOS
-  - [Happ](https://apps.apple.com/app/happ-proxy-utility/id6504287215) ([tvOS](https://apps.apple.com/us/app/happ-proxy-utility-for-tv/id6748297274))
+  - [Happ](https://apps.apple.com/app/happ-proxy-utility/id6504287215) | [Happ RU](https://apps.apple.com/ru/app/happ-proxy-utility-plus/id6746188973) | [Happ tvOS](https://apps.apple.com/us/app/happ-proxy-utility-for-tv/id6748297274)
   - [Streisand](https://apps.apple.com/app/streisand/id6450534064)
   - [OneXray](https://github.com/OneXray/OneXray)
 - macOS arm64 & x64
-  - [Happ](https://apps.apple.com/app/happ-proxy-utility/id6504287215)
+  - [Happ](https://apps.apple.com/app/happ-proxy-utility/id6504287215) | [Happ RU](https://apps.apple.com/ru/app/happ-proxy-utility-plus/id6746188973)
   - [V2rayU](https://github.com/yanue/V2rayU)
   - [V2RayXS](https://github.com/tzmax/V2RayXS)
   - [Furious](https://github.com/LorenEteval/Furious)
   - [OneXray](https://github.com/OneXray/OneXray)
   - [GoXRay](https://github.com/goxray/desktop)
   - [AnyPortal](https://github.com/AnyPortal/AnyPortal)
+  - [v2rayN](https://github.com/2dust/v2rayN)
 - Linux
   - [v2rayA](https://github.com/v2rayA/v2rayA)
   - [Furious](https://github.com/LorenEteval/Furious)
   - [GorzRay](https://github.com/ketetefid/GorzRay)
   - [GoXRay](https://github.com/goxray/desktop)
   - [AnyPortal](https://github.com/AnyPortal/AnyPortal)
+  - [v2rayN](https://github.com/2dust/v2rayN)
 
 ## Others that support VLESS, XTLS, REALITY, XUDP, PLUX...
 
 - iOS & macOS arm64 & tvOS
   - [Shadowrocket](https://apps.apple.com/app/shadowrocket/id932747118)
+  - [Loon](https://apps.apple.com/us/app/loon/id1373567447)
+  - [Egern](https://apps.apple.com/us/app/egern/id1616105820)
+  - [Quantumult X](https://apps.apple.com/us/app/quantumult-x/id1443988620)
 - Xray Tools
   - [xray-knife](https://github.com/lilendian0x00/xray-knife)
   - [xray-checker](https://github.com/kutovoys/xray-checker)
@@ -153,7 +172,13 @@ CGO_ENABLED=0 go build -o xray -trimpath -ldflags "-s -w -buildid=" ./main
 ### Reproducible Releases
 
 ```bash
-make
+CGO_ENABLED=0 go build -o xray -trimpath -buildvcs=false -gcflags="all=-l=4" -ldflags="-X github.com/GFW-knocker/Xray-core/core.build=REPLACE -s -w -buildid=" -v ./main
+```
+
+If you are compiling a 32-bit MIPS/MIPSLE target, use this command instead:
+
+```bash
+CGO_ENABLED=0 go build -o xray -trimpath -buildvcs=false -gcflags="-l=4" -ldflags="-X github.com/GFW-knocker/Xray-core/core.build=REPLACE -s -w -buildid=" -v ./main
 ```
 
 ## Stargazers over time

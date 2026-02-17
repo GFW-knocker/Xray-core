@@ -64,11 +64,6 @@ import (
 	// Transport headers
 	_ "github.com/GFW-knocker/Xray-core/transport/internet/headers/http"
 	_ "github.com/GFW-knocker/Xray-core/transport/internet/headers/noop"
-	_ "github.com/GFW-knocker/Xray-core/transport/internet/headers/srtp"
-	_ "github.com/GFW-knocker/Xray-core/transport/internet/headers/tls"
-	_ "github.com/GFW-knocker/Xray-core/transport/internet/headers/utp"
-	_ "github.com/GFW-knocker/Xray-core/transport/internet/headers/wechat"
-	_ "github.com/GFW-knocker/Xray-core/transport/internet/headers/wireguard"
 
 	// JSON & TOML & YAML
 	_ "github.com/GFW-knocker/Xray-core/main/json"

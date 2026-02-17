@@ -3,7 +3,6 @@ package internet
 import (
 	"context"
 	"math/rand"
-	gonet "net"
 	"syscall"
 	"time"
 
@@ -89,7 +88,7 @@ func (d *DefaultSystemDialer) Dial(ctx context.Context, src net.Address, dest ne
 		}, nil
 	}
 	// Chrome defaults
-	keepAliveConfig := gonet.KeepAliveConfig{
+	keepAliveConfig := net.KeepAliveConfig{
 		Enable:   true,
 		Idle:     45 * time.Second,
 		Interval: 45 * time.Second,
@@ -194,6 +193,14 @@ func (c *PacketConnWrapper) SetReadDeadline(t time.Time) error {
 
 func (c *PacketConnWrapper) SetWriteDeadline(t time.Time) error {
 	return c.Conn.SetWriteDeadline(t)
+}
+
+func (c *PacketConnWrapper) SyscallConn() (syscall.RawConn, error) {
+	sc, ok := c.Conn.(syscall.Conn)
+	if !ok {
+		return nil, syscall.EINVAL
+	}
+	return sc.SyscallConn()
 }
 
 type SystemDialerAdapter interface {

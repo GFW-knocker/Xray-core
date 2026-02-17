@@ -4,70 +4,16 @@ import (
 	"sort"
 
 	"github.com/GFW-knocker/Xray-core/common/errors"
-	"github.com/GFW-knocker/Xray-core/transport/internet/headers/dns"
+	"github.com/GFW-knocker/Xray-core/common/utils"
 	"github.com/GFW-knocker/Xray-core/transport/internet/headers/http"
 	"github.com/GFW-knocker/Xray-core/transport/internet/headers/noop"
-	"github.com/GFW-knocker/Xray-core/transport/internet/headers/srtp"
-	"github.com/GFW-knocker/Xray-core/transport/internet/headers/tls"
-	"github.com/GFW-knocker/Xray-core/transport/internet/headers/utp"
-	"github.com/GFW-knocker/Xray-core/transport/internet/headers/wechat"
-	"github.com/GFW-knocker/Xray-core/transport/internet/headers/wireguard"
 	"google.golang.org/protobuf/proto"
 )
-
-type NoOpAuthenticator struct{}
-
-func (NoOpAuthenticator) Build() (proto.Message, error) {
-	return new(noop.Config), nil
-}
 
 type NoOpConnectionAuthenticator struct{}
 
 func (NoOpConnectionAuthenticator) Build() (proto.Message, error) {
 	return new(noop.ConnectionConfig), nil
-}
-
-type SRTPAuthenticator struct{}
-
-func (SRTPAuthenticator) Build() (proto.Message, error) {
-	return new(srtp.Config), nil
-}
-
-type UTPAuthenticator struct{}
-
-func (UTPAuthenticator) Build() (proto.Message, error) {
-	return new(utp.Config), nil
-}
-
-type WechatVideoAuthenticator struct{}
-
-func (WechatVideoAuthenticator) Build() (proto.Message, error) {
-	return new(wechat.VideoConfig), nil
-}
-
-type WireguardAuthenticator struct{}
-
-func (WireguardAuthenticator) Build() (proto.Message, error) {
-	return new(wireguard.WireguardConfig), nil
-}
-
-type DNSAuthenticator struct {
-	Domain string `json:"domain"`
-}
-
-func (v *DNSAuthenticator) Build() (proto.Message, error) {
-	config := new(dns.Config)
-	config.Domain = "www.baidu.com"
-	if len(v.Domain) > 0 {
-		config.Domain = v.Domain
-	}
-	return config, nil
-}
-
-type DTLSAuthenticator struct{}
-
-func (DTLSAuthenticator) Build() (proto.Message, error) {
-	return new(tls.PacketConfig), nil
 }
 
 type AuthenticatorRequest struct {
@@ -95,11 +41,8 @@ func (v *AuthenticatorRequest) Build() (*http.RequestConfig, error) {
 				Value: []string{"www.baidu.com", "www.bing.com"},
 			},
 			{
-				Name: "User-Agent",
-				Value: []string{
-					"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
-					"Mozilla/5.0 (iPhone; CPU iPhone OS 10_3 like Mac OS X) AppleWebKit/602.1.50 (KHTML, like Gecko) CriOS/56.0.2924.75 Mobile/14E5239e Safari/602.1",
-				},
+				Name:  "User-Agent",
+				Value: []string{utils.ChromeUA},
 			},
 			{
 				Name:  "Accept-Encoding",

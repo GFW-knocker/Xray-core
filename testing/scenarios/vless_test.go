@@ -94,17 +94,13 @@ func TestVless(t *testing.T) {
 		Outbound: []*core.OutboundHandlerConfig{
 			{
 				ProxySettings: serial.ToTypedMessage(&outbound.Config{
-					Vnext: []*protocol.ServerEndpoint{
-						{
-							Address: net.NewIPOrDomain(net.LocalHostIP),
-							Port:    uint32(serverPort),
-							User: []*protocol.User{
-								{
-									Account: serial.ToTypedMessage(&vless.Account{
-										Id: userID.String(),
-									}),
-								},
-							},
+					Vnext: &protocol.ServerEndpoint{
+						Address: net.NewIPOrDomain(net.LocalHostIP),
+						Port:    uint32(serverPort),
+						User: &protocol.User{
+							Account: serial.ToTypedMessage(&vless.Account{
+								Id: userID.String(),
+							}),
 						},
 					},
 				}),
@@ -117,7 +113,7 @@ func TestVless(t *testing.T) {
 	defer CloseAllServers(servers)
 
 	var errg errgroup.Group
-	for i := 0; i < 10; i++ {
+	for range 3 {
 		errg.Go(testTCPConn(clientPort, 1024*1024, time.Second*30))
 	}
 	if err := errg.Wait(); err != nil {
@@ -132,6 +128,8 @@ func TestVlessTls(t *testing.T) {
 	dest, err := tcpServer.Start()
 	common.Must(err)
 	defer tcpServer.Close()
+
+	ct, ctHash := cert.MustGenerate(nil, cert.CommonName("localhost"))
 
 	userID := protocol.NewID(uuid.New())
 	serverPort := tcp.PickPort()
@@ -152,7 +150,7 @@ func TestVlessTls(t *testing.T) {
 						SecurityType: serial.GetMessageType(&tls.Config{}),
 						SecuritySettings: []*serial.TypedMessage{
 							serial.ToTypedMessage(&tls.Config{
-								Certificate: []*tls.Certificate{tls.ParseCertificate(cert.MustGenerate(nil))},
+								Certificate: []*tls.Certificate{tls.ParseCertificate(ct)},
 							}),
 						},
 					},
@@ -199,17 +197,13 @@ func TestVlessTls(t *testing.T) {
 		Outbound: []*core.OutboundHandlerConfig{
 			{
 				ProxySettings: serial.ToTypedMessage(&outbound.Config{
-					Vnext: []*protocol.ServerEndpoint{
-						{
-							Address: net.NewIPOrDomain(net.LocalHostIP),
-							Port:    uint32(serverPort),
-							User: []*protocol.User{
-								{
-									Account: serial.ToTypedMessage(&vless.Account{
-										Id: userID.String(),
-									}),
-								},
-							},
+					Vnext: &protocol.ServerEndpoint{
+						Address: net.NewIPOrDomain(net.LocalHostIP),
+						Port:    uint32(serverPort),
+						User: &protocol.User{
+							Account: serial.ToTypedMessage(&vless.Account{
+								Id: userID.String(),
+							}),
 						},
 					},
 				}),
@@ -225,7 +219,7 @@ func TestVlessTls(t *testing.T) {
 						SecurityType: serial.GetMessageType(&tls.Config{}),
 						SecuritySettings: []*serial.TypedMessage{
 							serial.ToTypedMessage(&tls.Config{
-								AllowInsecure: true,
+								PinnedPeerCertSha256: [][]byte{ctHash[:]},
 							}),
 						},
 					},
@@ -239,7 +233,7 @@ func TestVlessTls(t *testing.T) {
 	defer CloseAllServers(servers)
 
 	var errg errgroup.Group
-	for i := 0; i < 10; i++ {
+	for range 3 {
 		errg.Go(testTCPConn(clientPort, 1024*1024, time.Second*30))
 	}
 	if err := errg.Wait(); err != nil {
@@ -254,6 +248,8 @@ func TestVlessXtlsVision(t *testing.T) {
 	dest, err := tcpServer.Start()
 	common.Must(err)
 	defer tcpServer.Close()
+
+	ct, ctHash := cert.MustGenerate(nil, cert.CommonName("localhost"))
 
 	userID := protocol.NewID(uuid.New())
 	serverPort := tcp.PickPort()
@@ -274,7 +270,7 @@ func TestVlessXtlsVision(t *testing.T) {
 						SecurityType: serial.GetMessageType(&tls.Config{}),
 						SecuritySettings: []*serial.TypedMessage{
 							serial.ToTypedMessage(&tls.Config{
-								Certificate: []*tls.Certificate{tls.ParseCertificate(cert.MustGenerate(nil))},
+								Certificate: []*tls.Certificate{tls.ParseCertificate(ct)},
 							}),
 						},
 					},
@@ -322,18 +318,14 @@ func TestVlessXtlsVision(t *testing.T) {
 		Outbound: []*core.OutboundHandlerConfig{
 			{
 				ProxySettings: serial.ToTypedMessage(&outbound.Config{
-					Vnext: []*protocol.ServerEndpoint{
-						{
-							Address: net.NewIPOrDomain(net.LocalHostIP),
-							Port:    uint32(serverPort),
-							User: []*protocol.User{
-								{
-									Account: serial.ToTypedMessage(&vless.Account{
-										Id:   userID.String(),
-										Flow: vless.XRV,
-									}),
-								},
-							},
+					Vnext: &protocol.ServerEndpoint{
+						Address: net.NewIPOrDomain(net.LocalHostIP),
+						Port:    uint32(serverPort),
+						User: &protocol.User{
+							Account: serial.ToTypedMessage(&vless.Account{
+								Id:   userID.String(),
+								Flow: vless.XRV,
+							}),
 						},
 					},
 				}),
@@ -349,7 +341,7 @@ func TestVlessXtlsVision(t *testing.T) {
 						SecurityType: serial.GetMessageType(&tls.Config{}),
 						SecuritySettings: []*serial.TypedMessage{
 							serial.ToTypedMessage(&tls.Config{
-								AllowInsecure: true,
+								PinnedPeerCertSha256: [][]byte{ctHash[:]},
 							}),
 						},
 					},
@@ -363,7 +355,7 @@ func TestVlessXtlsVision(t *testing.T) {
 	defer CloseAllServers(servers)
 
 	var errg errgroup.Group
-	for i := 0; i < 10; i++ {
+	for range 3 {
 		errg.Go(testTCPConn(clientPort, 1024*1024, time.Second*30))
 	}
 	if err := errg.Wait(); err != nil {
@@ -456,18 +448,14 @@ func TestVlessXtlsVisionReality(t *testing.T) {
 		Outbound: []*core.OutboundHandlerConfig{
 			{
 				ProxySettings: serial.ToTypedMessage(&outbound.Config{
-					Vnext: []*protocol.ServerEndpoint{
-						{
-							Address: net.NewIPOrDomain(net.LocalHostIP),
-							Port:    uint32(serverPort),
-							User: []*protocol.User{
-								{
-									Account: serial.ToTypedMessage(&vless.Account{
-										Id:   userID.String(),
-										Flow: vless.XRV,
-									}),
-								},
-							},
+					Vnext: &protocol.ServerEndpoint{
+						Address: net.NewIPOrDomain(net.LocalHostIP),
+						Port:    uint32(serverPort),
+						User: &protocol.User{
+							Account: serial.ToTypedMessage(&vless.Account{
+								Id:   userID.String(),
+								Flow: vless.XRV,
+							}),
 						},
 					},
 				}),
@@ -502,7 +490,7 @@ func TestVlessXtlsVisionReality(t *testing.T) {
 	defer CloseAllServers(servers)
 
 	var errg errgroup.Group
-	for i := 0; i < 1; i++ {
+	for range 3 {
 		errg.Go(testTCPConn(clientPort, 1024*1024, time.Second*30))
 	}
 	if err := errg.Wait(); err != nil {

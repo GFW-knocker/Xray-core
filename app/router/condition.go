@@ -1,7 +1,12 @@
 package router
 
 import (
+	"context"
+	"io"
+	"os"
+	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/GFW-knocker/Xray-core/common/errors"
@@ -47,59 +52,60 @@ var matcherTypeMap = map[Domain_Type]strmatcher.Type{
 	Domain_Full:   strmatcher.Full,
 }
 
-func domainToMatcher(domain *Domain) (strmatcher.Matcher, error) {
-	matcherType, f := matcherTypeMap[domain.Type]
-	if !f {
-		return nil, errors.New("unsupported domain type", domain.Type)
-	}
-
-	matcher, err := matcherType.New(domain.Value)
-	if err != nil {
-		return nil, errors.New("failed to create domain matcher").Base(err)
-	}
-
-	return matcher, nil
-}
-
 type DomainMatcher struct {
-	matchers strmatcher.IndexMatcher
+	Matchers strmatcher.IndexMatcher
 }
 
-func NewMphMatcherGroup(domains []*Domain) (*DomainMatcher, error) {
+func SerializeDomainMatcher(domains []*Domain, w io.Writer) error {
+
 	g := strmatcher.NewMphMatcherGroup()
 	for _, d := range domains {
 		matcherType, f := matcherTypeMap[d.Type]
 		if !f {
-			return nil, errors.New("unsupported domain type", d.Type)
+			continue
+		}
+
+		_, err := g.AddPattern(d.Value, matcherType)
+		if err != nil {
+			return err
+		}
+	}
+	g.Build()
+	// serialize
+	return g.Serialize(w)
+}
+
+func NewDomainMatcherFromBuffer(data []byte) (*strmatcher.MphMatcherGroup, error) {
+	matcher, err := strmatcher.NewMphMatcherGroupFromBuffer(data)
+	if err != nil {
+		return nil, err
+	}
+	return matcher, nil
+}
+
+func NewMphMatcherGroup(domains []*Domain) (*DomainMatcher, error) {
+	g := strmatcher.NewMphMatcherGroup()
+	for i, d := range domains {
+		domains[i] = nil
+		matcherType, f := matcherTypeMap[d.Type]
+		if !f {
+			errors.LogError(context.Background(), "ignore unsupported domain type ", d.Type, " of rule ", d.Value)
+			continue
 		}
 		_, err := g.AddPattern(d.Value, matcherType)
 		if err != nil {
-			return nil, err
+			errors.LogErrorInner(context.Background(), err, "ignore domain rule ", d.Type, " ", d.Value)
+			continue
 		}
 	}
 	g.Build()
 	return &DomainMatcher{
-		matchers: g,
-	}, nil
-}
-
-func NewDomainMatcher(domains []*Domain) (*DomainMatcher, error) {
-	g := new(strmatcher.MatcherGroup)
-	for _, d := range domains {
-		m, err := domainToMatcher(d)
-		if err != nil {
-			return nil, err
-		}
-		g.Add(m)
-	}
-
-	return &DomainMatcher{
-		matchers: g,
+		Matchers: g,
 	}, nil
 }
 
 func (m *DomainMatcher) ApplyDomain(domain string) bool {
-	return len(m.matchers.Match(strings.ToLower(domain))) > 0
+	return len(m.Matchers.Match(strings.ToLower(domain))) > 0
 }
 
 // Apply implements Condition.
@@ -111,66 +117,72 @@ func (m *DomainMatcher) Apply(ctx routing.Context) bool {
 	return m.ApplyDomain(domain)
 }
 
-type MultiGeoIPMatcher struct {
-	matchers []*GeoIPMatcher
-	onSource bool
+type MatcherAsType byte
+
+const (
+	MatcherAsType_Local MatcherAsType = iota
+	MatcherAsType_Source
+	MatcherAsType_Target
+	MatcherAsType_VlessRoute // for port
+)
+
+type IPMatcher struct {
+	matcher GeoIPMatcher
+	asType  MatcherAsType
 }
 
-func NewMultiGeoIPMatcher(geoips []*GeoIP, onSource bool) (*MultiGeoIPMatcher, error) {
-	var matchers []*GeoIPMatcher
-	for _, geoip := range geoips {
-		matcher, err := GlobalGeoIPContainer.Add(geoip)
-		if err != nil {
-			return nil, err
-		}
-		matchers = append(matchers, matcher)
+func NewIPMatcher(geoips []*GeoIP, asType MatcherAsType) (*IPMatcher, error) {
+	matcher, err := BuildOptimizedGeoIPMatcher(geoips...)
+	if err != nil {
+		return nil, err
 	}
-
-	matcher := &MultiGeoIPMatcher{
-		matchers: matchers,
-		onSource: onSource,
-	}
-
-	return matcher, nil
+	return &IPMatcher{matcher: matcher, asType: asType}, nil
 }
 
 // Apply implements Condition.
-func (m *MultiGeoIPMatcher) Apply(ctx routing.Context) bool {
+func (m *IPMatcher) Apply(ctx routing.Context) bool {
 	var ips []net.IP
-	if m.onSource {
+
+	switch m.asType {
+	case MatcherAsType_Local:
+		ips = ctx.GetLocalIPs()
+	case MatcherAsType_Source:
 		ips = ctx.GetSourceIPs()
-	} else {
+	case MatcherAsType_Target:
 		ips = ctx.GetTargetIPs()
+	default:
+		panic("unk asType")
 	}
-	for _, ip := range ips {
-		for _, matcher := range m.matchers {
-			if matcher.Match(ip) {
-				return true
-			}
-		}
-	}
-	return false
+
+	return m.matcher.AnyMatch(ips)
 }
 
 type PortMatcher struct {
-	port     net.MemoryPortList
-	onSource bool
+	port   net.MemoryPortList
+	asType MatcherAsType
 }
 
-// NewPortMatcher create a new port matcher that can match source or destination port
-func NewPortMatcher(list *net.PortList, onSource bool) *PortMatcher {
+// NewPortMatcher create a new port matcher that can match source or local or destination port
+func NewPortMatcher(list *net.PortList, asType MatcherAsType) *PortMatcher {
 	return &PortMatcher{
-		port:     net.PortListFromProto(list),
-		onSource: onSource,
+		port:   net.PortListFromProto(list),
+		asType: asType,
 	}
 }
 
 // Apply implements Condition.
 func (v *PortMatcher) Apply(ctx routing.Context) bool {
-	if v.onSource {
+	switch v.asType {
+	case MatcherAsType_Local:
+		return v.port.Contains(ctx.GetLocalPort())
+	case MatcherAsType_Source:
 		return v.port.Contains(ctx.GetSourcePort())
-	} else {
+	case MatcherAsType_Target:
 		return v.port.Contains(ctx.GetTargetPort())
+	case MatcherAsType_VlessRoute:
+		return v.port.Contains(ctx.GetVlessRoute())
+	default:
+		panic("unk asType")
 	}
 }
 
@@ -324,4 +336,97 @@ func (m *AttributeMatcher) Apply(ctx routing.Context) bool {
 		return false
 	}
 	return m.Match(attributes)
+}
+
+type ProcessNameMatcher struct {
+	ProcessNames  []string
+	AbsPaths      []string
+	Folders       []string
+	MatchXraySelf bool
+}
+
+func NewProcessNameMatcher(names []string) *ProcessNameMatcher {
+	processNames := []string{}
+	folders := []string{}
+	absPaths := []string{}
+	matchXraySelf := false
+	for _, name := range names {
+		if name == "self/" {
+			matchXraySelf = true
+			continue
+		}
+		// replace xray/ with self executable path
+		if name == "xray/" {
+			xrayPath, err := os.Executable()
+			if err != nil {
+				errors.LogError(context.Background(), "Failed to get xray executable path: ", err)
+				continue
+			}
+			name = xrayPath
+		}
+		name := filepath.ToSlash(name)
+		// /usr/bin/
+		if strings.HasSuffix(name, "/") {
+			folders = append(folders, name)
+			continue
+		}
+		// /usr/bin/curl
+		if strings.Contains(name, "/") {
+			absPaths = append(absPaths, name)
+			continue
+		}
+		// curl.exe or curl
+		processNames = append(processNames, strings.TrimSuffix(name, ".exe"))
+	}
+	return &ProcessNameMatcher{
+		ProcessNames:  processNames,
+		AbsPaths:      absPaths,
+		Folders:       folders,
+		MatchXraySelf: matchXraySelf,
+	}
+}
+
+func (m *ProcessNameMatcher) Apply(ctx routing.Context) bool {
+	if len(ctx.GetSourceIPs()) == 0 {
+		return false
+	}
+	srcPort := ctx.GetSourcePort().String()
+	srcIP := ctx.GetSourceIPs()[0].String()
+	var network string
+	switch ctx.GetNetwork() {
+	case net.Network_TCP:
+		network = "tcp"
+	case net.Network_UDP:
+		network = "udp"
+	default:
+		return false
+	}
+	src, err := net.ParseDestination(strings.Join([]string{network, srcIP, srcPort}, ":"))
+	if err != nil {
+		return false
+	}
+	pid, name, absPath, err := net.FindProcess(src)
+	if err != nil {
+		if err != net.ErrNotLocal {
+			errors.LogError(context.Background(), "Unables to find local process name: ", err)
+		}
+		return false
+	}
+	if m.MatchXraySelf {
+		if pid == os.Getpid() {
+			return true
+		}
+	}
+	if slices.Contains(m.ProcessNames, name) {
+		return true
+	}
+	if slices.Contains(m.AbsPaths, absPath) {
+		return true
+	}
+	for _, f := range m.Folders {
+		if strings.HasPrefix(absPath, f) {
+			return true
+		}
+	}
+	return false
 }

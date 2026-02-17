@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/GFW-knocker/Xray-core/common/net"
+	"github.com/GFW-knocker/Xray-core/common/utils"
 	"github.com/GFW-knocker/Xray-core/features/routing"
 	"github.com/GFW-knocker/Xray-core/transport/internet/tagged"
 )
@@ -61,6 +62,7 @@ func (s *pingClient) MeasureDelay(httpMethod string) (time.Duration, error) {
 	if err != nil {
 		return rttFailed, err
 	}
+	req.Header.Set("User-Agent", utils.ChromeUA)
 
 	start := time.Now()
 	resp, err := s.httpClient.Do(req)
