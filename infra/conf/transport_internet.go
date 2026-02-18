@@ -1,7 +1,6 @@
 package conf
 
 import (
-	"context"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -11,11 +10,11 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/GFW-knocker/Xray-core/common/errors"
 	"github.com/GFW-knocker/Xray-core/common/net"
 	"github.com/GFW-knocker/Xray-core/common/platform/filesystem"
+	"github.com/GFW-knocker/Xray-core/common/protocol"
 	"github.com/GFW-knocker/Xray-core/common/serial"
 	"github.com/GFW-knocker/Xray-core/transport/internet"
 	"github.com/GFW-knocker/Xray-core/transport/internet/finalmask/header/dns"
@@ -32,6 +31,7 @@ import (
 	"github.com/GFW-knocker/Xray-core/transport/internet/httpupgrade"
 	"github.com/GFW-knocker/Xray-core/transport/internet/hysteria"
 	"github.com/GFW-knocker/Xray-core/transport/internet/kcp"
+	"github.com/GFW-knocker/Xray-core/transport/internet/quic"
 	"github.com/GFW-knocker/Xray-core/transport/internet/reality"
 	"github.com/GFW-knocker/Xray-core/transport/internet/splithttp"
 	"github.com/GFW-knocker/Xray-core/transport/internet/tcp"
@@ -41,6 +41,16 @@ import (
 )
 
 var (
+	kcpHeaderLoader = NewJSONConfigLoader(ConfigCreatorCache{
+		"none":         func() interface{} { return new(NoOpAuthenticator) },
+		"srtp":         func() interface{} { return new(SRTPAuthenticator) },
+		"utp":          func() interface{} { return new(UTPAuthenticator) },
+		"wechat-video": func() interface{} { return new(WechatVideoAuthenticator) },
+		"dtls":         func() interface{} { return new(DTLSAuthenticator) },
+		"wireguard":    func() interface{} { return new(WireguardAuthenticator) },
+		"dns":          func() interface{} { return new(DNSAuthenticator) },
+	}, "type", "")
+
 	tcpHeaderLoader = NewJSONConfigLoader(ConfigCreatorCache{
 		"none": func() interface{} { return new(NoOpConnectionAuthenticator) },
 		"http": func() interface{} { return new(Authenticator) },
@@ -452,9 +462,6 @@ func (c *SplitHTTPConfig) Build() (proto.Message, error) {
 	return config, nil
 }
 
-
-
-
 type QUICConfig struct {
 	Header   json.RawMessage `json:"header"`
 	Security string          `json:"security"`
@@ -495,8 +502,6 @@ func (c *QUICConfig) Build() (proto.Message, error) {
 
 	return config, nil
 }
-
-
 
 const (
 	Byte     = 1
@@ -806,6 +811,7 @@ func (c *TLSConfig) Build() (proto.Message, error) {
 		config.Certificate[idx] = cert
 	}
 	serverName := c.ServerName
+
 	if len(c.ServerName) > 0 {
 		config.ServerName = serverName
 	}
@@ -834,14 +840,8 @@ func (c *TLSConfig) Build() (proto.Message, error) {
 	config.RejectUnknownSni = c.RejectUnknownSNI
 	config.MasterKeyLog = c.MasterKeyLog
 
-	if c.AllowInsecure {
-		if time.Now().After(time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)) {
-			return nil, errors.PrintRemovedFeatureError(`"allowInsecure"`, `"pinnedPeerCertSha256"`)
-		} else {
-			errors.LogWarning(context.Background(), `"allowInsecure" will be removed automatically after 2026-06-01, please use "pinnedPeerCertSha256"(pcs) and "verifyPeerCertByName"(vcn) instead, PLEASE CONTACT YOUR SERVICE PROVIDER (AIRPORT)`)
-			config.AllowInsecure = true
-		}
-	}
+	config.AllowInsecure = c.AllowInsecure
+
 	if c.PinnedPeerCertSha256 != "" {
 		for v := range strings.SplitSeq(c.PinnedPeerCertSha256, ",") {
 			v = strings.TrimSpace(v)

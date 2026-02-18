@@ -89,8 +89,9 @@ func Listen(ctx context.Context, address net.Address, port net.Port, streamSetti
 
 	tlsConfig := tls.ConfigFromStreamSettings(streamSettings)
 	if tlsConfig == nil {
+		ct, _ := cert.MustGenerate(nil, cert.DNSNames(internalDomain), cert.CommonName(internalDomain))
 		tlsConfig = &tls.Config{
-			Certificate: []*tls.Certificate{tls.ParseCertificate(cert.MustGenerate(nil, cert.DNSNames(internalDomain), cert.CommonName(internalDomain)))},
+			Certificate: []*tls.Certificate{tls.ParseCertificate(ct)},
 		}
 	}
 

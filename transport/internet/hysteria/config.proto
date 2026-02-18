@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package xray.transport.internet.hysteria;
 option csharp_namespace = "Xray.Transport.Internet.Hysteria";
-option go_package = "github.com/xtls/xray-core/transport/internet/hysteria";
+option go_package = "github.com/GFW-knocker/Xray-core/transport/internet/hysteria";
 option java_package = "com.xray.transport.internet.hysteria";
 option java_multiple_files = true;
 

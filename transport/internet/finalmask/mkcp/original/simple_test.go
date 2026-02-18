@@ -4,8 +4,8 @@ import (
 	"crypto/rand"
 	"testing"
 
+	"github.com/GFW-knocker/Xray-core/transport/internet/finalmask/mkcp/original"
 	"github.com/stretchr/testify/assert"
-	"github.com/xtls/xray-core/transport/internet/finalmask/mkcp/original"
 )
 
 func TestOriginalBounce(t *testing.T) {

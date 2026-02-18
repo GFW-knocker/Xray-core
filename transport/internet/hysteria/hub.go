@@ -12,17 +12,17 @@ import (
 	"sync"
 	"time"
 
+	"github.com/GFW-knocker/Xray-core/common"
+	"github.com/GFW-knocker/Xray-core/common/errors"
+	"github.com/GFW-knocker/Xray-core/common/net"
+	"github.com/GFW-knocker/Xray-core/common/protocol"
+	"github.com/GFW-knocker/Xray-core/proxy/hysteria/account"
+	hyCtx "github.com/GFW-knocker/Xray-core/proxy/hysteria/ctx"
+	"github.com/GFW-knocker/Xray-core/transport/internet"
+	"github.com/GFW-knocker/Xray-core/transport/internet/hysteria/congestion"
+	"github.com/GFW-knocker/Xray-core/transport/internet/tls"
 	"github.com/apernet/quic-go"
 	"github.com/apernet/quic-go/http3"
-	"github.com/xtls/xray-core/common"
-	"github.com/xtls/xray-core/common/errors"
-	"github.com/xtls/xray-core/common/net"
-	"github.com/xtls/xray-core/common/protocol"
-	"github.com/xtls/xray-core/proxy/hysteria/account"
-	hyCtx "github.com/xtls/xray-core/proxy/hysteria/ctx"
-	"github.com/xtls/xray-core/transport/internet"
-	"github.com/xtls/xray-core/transport/internet/hysteria/congestion"
-	"github.com/xtls/xray-core/transport/internet/tls"
 )
 
 type udpSessionManagerServer struct {

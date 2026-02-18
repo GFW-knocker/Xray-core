@@ -11,8 +11,8 @@ import (
 	v2net "github.com/GFW-knocker/Xray-core/common/net"
 	"github.com/GFW-knocker/Xray-core/common/protocol"
 	"github.com/GFW-knocker/Xray-core/proxy/freedom"
+	"github.com/GFW-knocker/Xray-core/transport/internet"
 	"google.golang.org/protobuf/proto"
-	"github.com/xtls/xray-core/transport/internet"
 )
 
 type FreedomConfig struct {
@@ -28,22 +28,22 @@ type FreedomConfig struct {
 }
 
 type Fragment struct {
-	Packets      string `json:"packets"`
-	Length       string `json:"length"`
-	Interval     string `json:"interval"`
-	Host1_header string `json:"host1_header"`
-	Host1_domain string `json:"host1_domain"`
-	Host2_header string `json:"host2_header"`
-	Host2_domain string `json:"host2_domain"`
-	MaxSplit *Int32Range `json:"maxSplit"`
+	Packets      string      `json:"packets"`
+	Length       string      `json:"length"`
+	Interval     string      `json:"interval"`
+	Host1_header string      `json:"host1_header"`
+	Host1_domain string      `json:"host1_domain"`
+	Host2_header string      `json:"host2_header"`
+	Host2_domain string      `json:"host2_domain"`
+	MaxSplit     *Int32Range `json:"maxSplit"`
 }
 
 type Noise struct {
-	Type   string      `json:"type"`
-	Packet string      `json:"packet"`
-	Delay  *Int32Range `json:"delay"`
-	Count  *Int32Range `json:"count"`
-	ApplyTo string     `json:"applyTo"`
+	Type    string      `json:"type"`
+	Packet  string      `json:"packet"`
+	Delay   *Int32Range `json:"delay"`
+	Count   *Int32Range `json:"count"`
+	ApplyTo string      `json:"applyTo"`
 }
 
 // Build implements Buildable
@@ -300,7 +300,6 @@ func ParseNoise(noise *Noise) (*freedom.Noise, error) {
 		NConfig.CountMax = uint64(noise.Count.To)
 	}
 
-	
 	switch strings.ToLower(noise.ApplyTo) {
 	case "", "ip", "all":
 		NConfig.ApplyTo = "ip"

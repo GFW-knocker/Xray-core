@@ -62,8 +62,8 @@ var File_transport_internet_finalmask_header_wireguard_config_proto protoreflect
 const file_transport_internet_finalmask_header_wireguard_config_proto_rawDesc = "" +
 	"\n" +
 	":transport/internet/finalmask/header/wireguard/config.proto\x122xray.transport.internet.finalmask.header.wireguard\"\b\n" +
-	"\x06ConfigB\xb8\x01\n" +
-	"6com.xray.transport.internet.finalmask.header.wireguardP\x01ZGgithub.com/xtls/xray-core/transport/internet/finalmask/header/wireguard\xaa\x022Xray.Transport.Internet.Finalmask.Header.Wireguardb\x06proto3"
+	"\x06ConfigB\xbf\x01\n" +
+	"6com.xray.transport.internet.finalmask.header.wireguardP\x01ZNgithub.com/GFW-knocker/Xray-core/transport/internet/finalmask/header/wireguard\xaa\x022Xray.Transport.Internet.Finalmask.Header.Wireguardb\x06proto3"
 
 var (
 	file_transport_internet_finalmask_header_wireguard_config_proto_rawDescOnce sync.Once

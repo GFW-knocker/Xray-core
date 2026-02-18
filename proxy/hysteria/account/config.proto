@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package xray.proxy.hysteria.account;
 option csharp_namespace = "Xray.Proxy.Hysteria.Account";
-option go_package = "github.com/xtls/xray-core/proxy/hysteria/account";
+option go_package = "github.com/GFW-knocker/Xray-core/proxy/hysteria/account";
 option java_package = "com.xray.proxy.hysteria.account";
 option java_multiple_files = true;
 

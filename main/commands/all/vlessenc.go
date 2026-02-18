@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/xtls/xray-core/main/commands/base"
+	"github.com/GFW-knocker/Xray-core/main/commands/base"
 )
 
 var cmdVLESSEnc = &base.Command{

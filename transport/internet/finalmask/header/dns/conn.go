@@ -7,8 +7,8 @@ import (
 	sync "sync"
 	"time"
 
-	"github.com/xtls/xray-core/common/dice"
-	"github.com/xtls/xray-core/common/errors"
+	"github.com/GFW-knocker/Xray-core/common/dice"
+	"github.com/GFW-knocker/Xray-core/common/errors"
 )
 
 func packDomainName(s string, msg []byte) (off1 int, err error) {

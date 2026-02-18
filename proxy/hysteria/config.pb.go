@@ -127,8 +127,8 @@ const file_proxy_hysteria_config_proto_rawDesc = "" +
 	"\aversion\x18\x01 \x01(\x05R\aversion\x12<\n" +
 	"\x06server\x18\x02 \x01(\v2$.xray.common.protocol.ServerEndpointR\x06server\"@\n" +
 	"\fServerConfig\x120\n" +
-	"\x05users\x18\x01 \x03(\v2\x1a.xray.common.protocol.UserR\x05usersB[\n" +
-	"\x17com.xray.proxy.hysteriaP\x01Z(github.com/xtls/xray-core/proxy/hysteria\xaa\x02\x13Xray.Proxy.Hysteriab\x06proto3"
+	"\x05users\x18\x01 \x03(\v2\x1a.xray.common.protocol.UserR\x05usersBb\n" +
+	"\x17com.xray.proxy.hysteriaP\x01Z/github.com/GFW-knocker/Xray-core/proxy/hysteria\xaa\x02\x13Xray.Proxy.Hysteriab\x06proto3"
 
 var (
 	file_proxy_hysteria_config_proto_rawDescOnce sync.Once

@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/GFW-knocker/Xray-core/common/errors"
 	"github.com/apernet/quic-go/quicvarint"
-	"github.com/xtls/xray-core/common/errors"
 )
 
 const (

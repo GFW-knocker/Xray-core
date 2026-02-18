@@ -5,8 +5,8 @@ import (
 	"crypto/sha256"
 	"testing"
 
+	"github.com/GFW-knocker/Xray-core/common/crypto"
 	"github.com/stretchr/testify/assert"
-	"github.com/xtls/xray-core/common/crypto"
 )
 
 func TestAes128GcmSealInPlace(t *testing.T) {

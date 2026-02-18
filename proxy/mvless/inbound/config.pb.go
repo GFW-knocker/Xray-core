@@ -107,12 +107,14 @@ func (x *Fallback) GetXver() uint64 {
 }
 
 type Config struct {
-	state   protoimpl.MessageState `protogen:"open.v1"`
-	Clients []*protocol.User       `protobuf:"bytes,1,rep,name=clients,proto3" json:"clients,omitempty"`
-	// Decryption settings. Only applies to server side, and only accepts "none"
-	// for now.
-	Decryption    string      `protobuf:"bytes,2,opt,name=decryption,proto3" json:"decryption,omitempty"`
-	Fallbacks     []*Fallback `protobuf:"bytes,3,rep,name=fallbacks,proto3" json:"fallbacks,omitempty"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Clients       []*protocol.User       `protobuf:"bytes,1,rep,name=clients,proto3" json:"clients,omitempty"`
+	Fallbacks     []*Fallback            `protobuf:"bytes,2,rep,name=fallbacks,proto3" json:"fallbacks,omitempty"`
+	Decryption    string                 `protobuf:"bytes,3,opt,name=decryption,proto3" json:"decryption,omitempty"`
+	XorMode       uint32                 `protobuf:"varint,4,opt,name=xorMode,proto3" json:"xorMode,omitempty"`
+	SecondsFrom   int64                  `protobuf:"varint,5,opt,name=seconds_from,json=secondsFrom,proto3" json:"seconds_from,omitempty"`
+	SecondsTo     int64                  `protobuf:"varint,6,opt,name=seconds_to,json=secondsTo,proto3" json:"seconds_to,omitempty"`
+	Padding       string                 `protobuf:"bytes,7,opt,name=padding,proto3" json:"padding,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -154,6 +156,13 @@ func (x *Config) GetClients() []*protocol.User {
 	return nil
 }
 
+func (x *Config) GetFallbacks() []*Fallback {
+	if x != nil {
+		return x.Fallbacks
+	}
+	return nil
+}
+
 func (x *Config) GetDecryption() string {
 	if x != nil {
 		return x.Decryption
@@ -161,11 +170,32 @@ func (x *Config) GetDecryption() string {
 	return ""
 }
 
-func (x *Config) GetFallbacks() []*Fallback {
+func (x *Config) GetXorMode() uint32 {
 	if x != nil {
-		return x.Fallbacks
+		return x.XorMode
 	}
-	return nil
+	return 0
+}
+
+func (x *Config) GetSecondsFrom() int64 {
+	if x != nil {
+		return x.SecondsFrom
+	}
+	return 0
+}
+
+func (x *Config) GetSecondsTo() int64 {
+	if x != nil {
+		return x.SecondsTo
+	}
+	return 0
+}
+
+func (x *Config) GetPadding() string {
+	if x != nil {
+		return x.Padding
+	}
+	return ""
 }
 
 var File_proxy_mvless_inbound_config_proto protoreflect.FileDescriptor
@@ -179,13 +209,18 @@ const file_proxy_mvless_inbound_config_proto_rawDesc = "" +
 	"\x04path\x18\x03 \x01(\tR\x04path\x12\x12\n" +
 	"\x04type\x18\x04 \x01(\tR\x04type\x12\x12\n" +
 	"\x04dest\x18\x05 \x01(\tR\x04dest\x12\x12\n" +
-	"\x04xver\x18\x06 \x01(\x04R\x04xver\"\xa1\x01\n" +
+	"\x04xver\x18\x06 \x01(\x04R\x04xver\"\x97\x02\n" +
 	"\x06Config\x124\n" +
-	"\aclients\x18\x01 \x03(\v2\x1a.xray.common.protocol.UserR\aclients\x12\x1e\n" +
+	"\aclients\x18\x01 \x03(\v2\x1a.xray.common.protocol.UserR\aclients\x12A\n" +
+	"\tfallbacks\x18\x02 \x03(\v2#.xray.proxy.mvless.inbound.FallbackR\tfallbacks\x12\x1e\n" +
 	"\n" +
-	"decryption\x18\x02 \x01(\tR\n" +
-	"decryption\x12A\n" +
-	"\tfallbacks\x18\x03 \x03(\v2#.xray.proxy.mvless.inbound.FallbackR\tfallbacksBt\n" +
+	"decryption\x18\x03 \x01(\tR\n" +
+	"decryption\x12\x18\n" +
+	"\axorMode\x18\x04 \x01(\rR\axorMode\x12!\n" +
+	"\fseconds_from\x18\x05 \x01(\x03R\vsecondsFrom\x12\x1d\n" +
+	"\n" +
+	"seconds_to\x18\x06 \x01(\x03R\tsecondsTo\x12\x18\n" +
+	"\apadding\x18\a \x01(\tR\apaddingBt\n" +
 	"\x1dcom.xray.proxy.mvless.inboundP\x01Z5github.com/GFW-knocker/Xray-core/proxy/mvless/inbound\xaa\x02\x19Xray.Proxy.Mvless.Inboundb\x06proto3"
 
 var (

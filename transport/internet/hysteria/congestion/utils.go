@@ -1,9 +1,9 @@
 package congestion
 
 import (
+	"github.com/GFW-knocker/Xray-core/transport/internet/hysteria/congestion/bbr"
+	"github.com/GFW-knocker/Xray-core/transport/internet/hysteria/congestion/brutal"
 	"github.com/apernet/quic-go"
-	"github.com/xtls/xray-core/transport/internet/hysteria/congestion/bbr"
-	"github.com/xtls/xray-core/transport/internet/hysteria/congestion/brutal"
 )
 
 func UseBBR(conn *quic.Conn) {

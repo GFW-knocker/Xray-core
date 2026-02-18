@@ -23,8 +23,8 @@ const (
 )
 
 type Config struct {
-	state         protoimpl.MessageState     `protogen:"open.v1"`
-	Vnext         []*protocol.ServerEndpoint `protobuf:"bytes,1,rep,name=vnext,proto3" json:"vnext,omitempty"`
+	state         protoimpl.MessageState   `protogen:"open.v1"`
+	Vnext         *protocol.ServerEndpoint `protobuf:"bytes,1,opt,name=vnext,proto3" json:"vnext,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -59,7 +59,7 @@ func (*Config) Descriptor() ([]byte, []int) {
 	return file_proxy_mvless_outbound_config_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *Config) GetVnext() []*protocol.ServerEndpoint {
+func (x *Config) GetVnext() *protocol.ServerEndpoint {
 	if x != nil {
 		return x.Vnext
 	}
@@ -72,7 +72,7 @@ const file_proxy_mvless_outbound_config_proto_rawDesc = "" +
 	"\n" +
 	"\"proxy/mvless/outbound/config.proto\x12\x1axray.proxy.mvless.outbound\x1a!common/protocol/server_spec.proto\"D\n" +
 	"\x06Config\x12:\n" +
-	"\x05vnext\x18\x01 \x03(\v2$.xray.common.protocol.ServerEndpointR\x05vnextBw\n" +
+	"\x05vnext\x18\x01 \x01(\v2$.xray.common.protocol.ServerEndpointR\x05vnextBw\n" +
 	"\x1ecom.xray.proxy.mvless.outboundP\x01Z6github.com/GFW-knocker/Xray-core/proxy/mvless/outbound\xaa\x02\x1aXray.Proxy.Mvless.Outboundb\x06proto3"
 
 var (

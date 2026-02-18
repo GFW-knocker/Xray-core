@@ -62,8 +62,8 @@ var File_transport_internet_finalmask_mkcp_original_config_proto protoreflect.Fi
 const file_transport_internet_finalmask_mkcp_original_config_proto_rawDesc = "" +
 	"\n" +
 	"7transport/internet/finalmask/mkcp/original/config.proto\x12/xray.transport.internet.finalmask.mkcp.original\"\b\n" +
-	"\x06ConfigB\xaf\x01\n" +
-	"3com.xray.transport.internet.finalmask.mkcp.originalP\x01ZDgithub.com/xtls/xray-core/transport/internet/finalmask/mkcp/original\xaa\x02/Xray.Transport.Internet.Finalmask.Mkcp.Originalb\x06proto3"
+	"\x06ConfigB\xb6\x01\n" +
+	"3com.xray.transport.internet.finalmask.mkcp.originalP\x01ZKgithub.com/GFW-knocker/Xray-core/transport/internet/finalmask/mkcp/original\xaa\x02/Xray.Transport.Internet.Finalmask.Mkcp.Originalb\x06proto3"
 
 var (
 	file_transport_internet_finalmask_mkcp_original_config_proto_rawDescOnce sync.Once

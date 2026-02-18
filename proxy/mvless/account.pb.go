@@ -21,21 +21,70 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type Reverse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Tag           string                 `protobuf:"bytes,1,opt,name=tag,proto3" json:"tag,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Reverse) Reset() {
+	*x = Reverse{}
+	mi := &file_proxy_mvless_account_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Reverse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Reverse) ProtoMessage() {}
+
+func (x *Reverse) ProtoReflect() protoreflect.Message {
+	mi := &file_proxy_mvless_account_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Reverse.ProtoReflect.Descriptor instead.
+func (*Reverse) Descriptor() ([]byte, []int) {
+	return file_proxy_mvless_account_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *Reverse) GetTag() string {
+	if x != nil {
+		return x.Tag
+	}
+	return ""
+}
+
 type Account struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// ID of the account, in the form of a UUID, e.g., "66ad4540-b58c-4ad2-9926-ea63445a9b57".
 	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	// Flow settings. May be "xtls-rprx-vision".
-	Flow string `protobuf:"bytes,2,opt,name=flow,proto3" json:"flow,omitempty"`
-	// Encryption settings. Only applies to client side, and only accepts "none" for now.
-	Encryption    string `protobuf:"bytes,3,opt,name=encryption,proto3" json:"encryption,omitempty"`
+	Flow          string   `protobuf:"bytes,2,opt,name=flow,proto3" json:"flow,omitempty"`
+	Encryption    string   `protobuf:"bytes,3,opt,name=encryption,proto3" json:"encryption,omitempty"`
+	XorMode       uint32   `protobuf:"varint,4,opt,name=xorMode,proto3" json:"xorMode,omitempty"`
+	Seconds       uint32   `protobuf:"varint,5,opt,name=seconds,proto3" json:"seconds,omitempty"`
+	Padding       string   `protobuf:"bytes,6,opt,name=padding,proto3" json:"padding,omitempty"`
+	Reverse       *Reverse `protobuf:"bytes,7,opt,name=reverse,proto3" json:"reverse,omitempty"`
+	Testpre       uint32   `protobuf:"varint,8,opt,name=testpre,proto3" json:"testpre,omitempty"`
+	Testseed      []uint32 `protobuf:"varint,9,rep,packed,name=testseed,proto3" json:"testseed,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Account) Reset() {
 	*x = Account{}
-	mi := &file_proxy_mvless_account_proto_msgTypes[0]
+	mi := &file_proxy_mvless_account_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -47,7 +96,7 @@ func (x *Account) String() string {
 func (*Account) ProtoMessage() {}
 
 func (x *Account) ProtoReflect() protoreflect.Message {
-	mi := &file_proxy_mvless_account_proto_msgTypes[0]
+	mi := &file_proxy_mvless_account_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -60,7 +109,7 @@ func (x *Account) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Account.ProtoReflect.Descriptor instead.
 func (*Account) Descriptor() ([]byte, []int) {
-	return file_proxy_mvless_account_proto_rawDescGZIP(), []int{0}
+	return file_proxy_mvless_account_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *Account) GetId() string {
@@ -84,17 +133,67 @@ func (x *Account) GetEncryption() string {
 	return ""
 }
 
+func (x *Account) GetXorMode() uint32 {
+	if x != nil {
+		return x.XorMode
+	}
+	return 0
+}
+
+func (x *Account) GetSeconds() uint32 {
+	if x != nil {
+		return x.Seconds
+	}
+	return 0
+}
+
+func (x *Account) GetPadding() string {
+	if x != nil {
+		return x.Padding
+	}
+	return ""
+}
+
+func (x *Account) GetReverse() *Reverse {
+	if x != nil {
+		return x.Reverse
+	}
+	return nil
+}
+
+func (x *Account) GetTestpre() uint32 {
+	if x != nil {
+		return x.Testpre
+	}
+	return 0
+}
+
+func (x *Account) GetTestseed() []uint32 {
+	if x != nil {
+		return x.Testseed
+	}
+	return nil
+}
+
 var File_proxy_mvless_account_proto protoreflect.FileDescriptor
 
 const file_proxy_mvless_account_proto_rawDesc = "" +
 	"\n" +
-	"\x1aproxy/mvless/account.proto\x12\x11xray.proxy.mvless\"M\n" +
+	"\x1aproxy/mvless/account.proto\x12\x11xray.proxy.mvless\"\x1b\n" +
+	"\aReverse\x12\x10\n" +
+	"\x03tag\x18\x01 \x01(\tR\x03tag\"\x87\x02\n" +
 	"\aAccount\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04flow\x18\x02 \x01(\tR\x04flow\x12\x1e\n" +
 	"\n" +
 	"encryption\x18\x03 \x01(\tR\n" +
-	"encryptionB\\\n" +
+	"encryption\x12\x18\n" +
+	"\axorMode\x18\x04 \x01(\rR\axorMode\x12\x18\n" +
+	"\aseconds\x18\x05 \x01(\rR\aseconds\x12\x18\n" +
+	"\apadding\x18\x06 \x01(\tR\apadding\x124\n" +
+	"\areverse\x18\a \x01(\v2\x1a.xray.proxy.mvless.ReverseR\areverse\x12\x18\n" +
+	"\atestpre\x18\b \x01(\rR\atestpre\x12\x1a\n" +
+	"\btestseed\x18\t \x03(\rR\btestseedB\\\n" +
 	"\x15com.xray.proxy.mvlessP\x01Z-github.com/GFW-knocker/Xray-core/proxy/mvless\xaa\x02\x11Xray.Proxy.Mvlessb\x06proto3"
 
 var (
@@ -109,16 +208,18 @@ func file_proxy_mvless_account_proto_rawDescGZIP() []byte {
 	return file_proxy_mvless_account_proto_rawDescData
 }
 
-var file_proxy_mvless_account_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
+var file_proxy_mvless_account_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_proxy_mvless_account_proto_goTypes = []any{
-	(*Account)(nil), // 0: xray.proxy.mvless.Account
+	(*Reverse)(nil), // 0: xray.proxy.mvless.Reverse
+	(*Account)(nil), // 1: xray.proxy.mvless.Account
 }
 var file_proxy_mvless_account_proto_depIdxs = []int32{
-	0, // [0:0] is the sub-list for method output_type
-	0, // [0:0] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	0, // 0: xray.proxy.mvless.Account.reverse:type_name -> xray.proxy.mvless.Reverse
+	1, // [1:1] is the sub-list for method output_type
+	1, // [1:1] is the sub-list for method input_type
+	1, // [1:1] is the sub-list for extension type_name
+	1, // [1:1] is the sub-list for extension extendee
+	0, // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_proxy_mvless_account_proto_init() }
@@ -132,7 +233,7 @@ func file_proxy_mvless_account_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proxy_mvless_account_proto_rawDesc), len(file_proxy_mvless_account_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   1,
+			NumMessages:   2,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

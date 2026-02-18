@@ -23,18 +23,14 @@ import (
 
 func TestQuicConnection(t *testing.T) {
 	port := udp.PickPort()
-
+	ct, _ := cert.MustGenerate(nil, cert.DNSNames("www.example.com"))
 	listener, err := quic.Listen(context.Background(), net.LocalHostIP, port, &internet.MemoryStreamConfig{
 		ProtocolName:     "quic",
 		ProtocolSettings: &quic.Config{},
 		SecurityType:     "tls",
 		SecuritySettings: &tls.Config{
 			Certificate: []*tls.Certificate{
-				tls.ParseCertificate(
-					cert.MustGenerate(nil,
-						cert.DNSNames("www.example.com"),
-					),
-				),
+				tls.ParseCertificate(ct),
 			},
 		},
 	}, func(conn stat.Connection) {

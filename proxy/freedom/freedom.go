@@ -9,10 +9,8 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/pires/go-proxyproto"
 	"github.com/GFW-knocker/Xray-core/common"
 	"github.com/GFW-knocker/Xray-core/common/buf"
-	"github.com/GFW-knocker/Xray-core/common/crypto"
 	"github.com/GFW-knocker/Xray-core/common/dice"
 	"github.com/GFW-knocker/Xray-core/common/errors"
 	"github.com/GFW-knocker/Xray-core/common/net"
@@ -29,8 +27,7 @@ import (
 	"github.com/GFW-knocker/Xray-core/transport"
 	"github.com/GFW-knocker/Xray-core/transport/internet"
 	"github.com/GFW-knocker/Xray-core/transport/internet/stat"
-
-
+	"github.com/pires/go-proxyproto"
 )
 
 var useSplice bool
@@ -198,12 +195,12 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
 			if h.config.Noises != nil {
 				errors.LogDebug(ctx, "NOISE", h.config.Noises)
 				writer = &NoisePacketWriter{
-					Writer:      writer,
-					noises:      h.config.Noises,
+					Writer:         writer,
+					noises:         h.config.Noises,
 					noiseKeepAlive: h.config.NoiseKeepAlive,
-					firstWrite:  true,
-					UDPOverride: UDPOverride,
-					remoteAddr:  net.DestinationFromAddr(conn.RemoteAddr()).Address,
+					firstWrite:     true,
+					UDPOverride:    UDPOverride,
+					remoteAddr:     net.DestinationFromAddr(conn.RemoteAddr()).Address,
 				}
 			}
 		}
@@ -445,40 +442,10 @@ func (w *NoisePacketWriter) WriteMultiBuffer(mb buf.MultiBuffer) error {
 		if w.UDPOverride.Port == 53 {
 			return w.Writer.WriteMultiBuffer(mb)
 		}
-		var noise []byte
-		var err error
+
 		if w.remoteAddr.Family().IsDomain() {
 			panic("impossible, remoteAddr is always IP")
 		}
-		for _, n := range w.noises {
-			switch n.ApplyTo {
-			case "ipv4":
-				if w.remoteAddr.Family().IsIPv6() {
-					continue
-				}
-			case "ipv6":
-				if w.remoteAddr.Family().IsIPv4() {
-					continue
-				}
-			case "ip":
-			default:
-				panic("unreachable, applyTo is ip/ipv4/ipv6")
-			}
-			//User input string or base64 encoded string or hex string
-			if n.Packet != nil {
-				noise = n.Packet
-			} else {
-				//Random noise
-				noise, err = GenerateRandomBytes(crypto.RandBetween(int64(n.LengthMin),
-					int64(n.LengthMax)))
-			}
-			if err != nil {
-				return err
-			}
-			err = w.Writer.WriteMultiBuffer(buf.MultiBuffer{buf.FromBytes(noise)})
-			if err != nil {
-				return err
-			}
 
 		// Send initial noise
 		if err := w.sendNoise(); err != nil {
@@ -503,6 +470,20 @@ func (w *NoisePacketWriter) sendNoise() error {
 	var delay time.Duration
 
 	for _, n := range w.noises {
+		switch n.ApplyTo {
+		case "ipv4":
+			if w.remoteAddr.Family().IsIPv6() {
+				continue
+			}
+		case "ipv6":
+			if w.remoteAddr.Family().IsIPv4() {
+				continue
+			}
+		case "ip":
+		default:
+			panic("unreachable, applyTo is ip/ipv4/ipv6")
+		}
+
 		//User input string or base64 encoded string
 		if n.Packet != nil {
 			noise = n.Packet
@@ -604,9 +585,9 @@ func (f *FragmentWriter) Write(b []byte) (int, error) {
 			return f.writer.Write(b)
 		}
 		data := b[5:recordLen]
-		buf := make([]byte, 1024)
-		queue := make([]byte, 2048)
-		n_queue := int(randBetween(int64(2), int64(4)))
+		buf := make([]byte, 2048)
+		queue := make([]byte, 8192)
+		n_queue := int(randBetween(int64(10), int64(20)))
 		L_queue := 0
 		c_queue := 0
 		for from := 0; ; {
@@ -614,12 +595,9 @@ func (f *FragmentWriter) Write(b []byte) (int, error) {
 			if to > len(data) {
 				to = len(data)
 			}
+			copy(buf[:3], b)
+			copy(buf[5:], data[from:to])
 			l := to - from
-			if 5+l > len(buff) {
-				buff = make([]byte, 5+l)
-			}
-			copy(buff[:3], b)
-			copy(buff[5:], data[from:to])
 			from = to
 			buf[3] = byte(l >> 8)
 			buf[4] = byte(l)
@@ -675,7 +653,6 @@ func (f *FragmentWriter) Write(b []byte) (int, error) {
 	if f.fragment.PacketsFrom != 0 && (f.count < f.fragment.PacketsFrom || f.count > f.fragment.PacketsTo) {
 		return f.writer.Write(b)
 	}
-
 	for from := 0; ; {
 		to := from + int(randBetween(int64(f.fragment.LengthMin), int64(f.fragment.LengthMax)))
 		if to > len(b) {
