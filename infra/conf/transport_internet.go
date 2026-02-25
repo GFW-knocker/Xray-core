@@ -1639,6 +1639,7 @@ func (c *StreamConfig) Build() (*internet.StreamConfig, error) {
 			Settings:     serial.ToTypedMessage(hs),
 		})
 	}
+
 	if c.HysteriaSettings != nil {
 		hs, err := c.HysteriaSettings.Build()
 		if err != nil {
@@ -1647,6 +1648,9 @@ func (c *StreamConfig) Build() (*internet.StreamConfig, error) {
 		config.TransportSettings = append(config.TransportSettings, &internet.TransportConfig{
 			ProtocolName: "hysteria",
 			Settings:     serial.ToTypedMessage(hs),
+		})
+	}
+
 	if c.DNSTTSettings != nil {
 		ds, err := c.DNSTTSettings.Build()
 		if err != nil {
@@ -1657,6 +1661,7 @@ func (c *StreamConfig) Build() (*internet.StreamConfig, error) {
 			Settings:     serial.ToTypedMessage(ds),
 		})
 	}
+
 	if c.SocketSettings != nil {
 		ss, err := c.SocketSettings.Build()
 		if err != nil {
