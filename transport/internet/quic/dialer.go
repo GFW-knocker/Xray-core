@@ -12,9 +12,7 @@ import (
 	"github.com/GFW-knocker/Xray-core/transport/internet"
 	"github.com/GFW-knocker/Xray-core/transport/internet/stat"
 	"github.com/GFW-knocker/Xray-core/transport/internet/tls"
-	"github.com/quic-go/quic-go"
-	"github.com/quic-go/quic-go/logging"
-	"github.com/quic-go/quic-go/qlog"
+	"github.com/apernet/quic-go"
 )
 
 type connectionContext struct {
@@ -141,11 +139,8 @@ func (s *clientConnections) openConnection(ctx context.Context, destAddr net.Add
 
 	quicConfig := &quic.Config{
 		KeepAlivePeriod:      0,
-		HandshakeIdleTimeout: time.Second * 8,
-		MaxIdleTimeout:       time.Second * 300,
-		Tracer: func(ctx context.Context, p logging.Perspective, ci quic.ConnectionID) *logging.ConnectionTracer {
-			return qlog.NewConnectionTracer(&QlogWriter{connID: ci}, p, ci)
-		},
+		HandshakeIdleTimeout: 8 * time.Second,
+		MaxIdleTimeout:       300 * time.Second,
 	}
 
 	var udpConn *net.UDPConn

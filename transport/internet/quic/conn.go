@@ -11,7 +11,7 @@ import (
 	"github.com/GFW-knocker/Xray-core/common/buf"
 	"github.com/GFW-knocker/Xray-core/common/net"
 	"github.com/GFW-knocker/Xray-core/transport/internet"
-	"github.com/quic-go/quic-go"
+	"github.com/apernet/quic-go"
 )
 
 type sysConn struct {

@@ -23,7 +23,7 @@ import (
 
 func TestQuicConnection(t *testing.T) {
 	port := udp.PickPort()
-	ct, _ := cert.MustGenerate(nil, cert.DNSNames("www.example.com"))
+	ct, _ := cert.MustGenerate(nil, cert.DNSNames("www.example.com"), cert.CommonName("www.example.com"))
 	listener, err := quic.Listen(context.Background(), net.LocalHostIP, port, &internet.MemoryStreamConfig{
 		ProtocolName:     "quic",
 		ProtocolSettings: &quic.Config{},

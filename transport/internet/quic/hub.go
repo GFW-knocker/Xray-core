@@ -11,9 +11,7 @@ import (
 	"github.com/GFW-knocker/Xray-core/common/signal/done"
 	"github.com/GFW-knocker/Xray-core/transport/internet"
 	"github.com/GFW-knocker/Xray-core/transport/internet/tls"
-	"github.com/quic-go/quic-go"
-	"github.com/quic-go/quic-go/logging"
-	"github.com/quic-go/quic-go/qlog"
+	"github.com/apernet/quic-go"
 )
 
 // Listener is an internet.Listener that listens for TCP connections.
@@ -110,9 +108,6 @@ func Listen(ctx context.Context, address net.Address, port net.Port, streamSetti
 		MaxIdleTimeout:        time.Second * 300,
 		MaxIncomingStreams:    32,
 		MaxIncomingUniStreams: -1,
-		Tracer: func(ctx context.Context, p logging.Perspective, ci quic.ConnectionID) *logging.ConnectionTracer {
-			return qlog.NewConnectionTracer(&QlogWriter{connID: ci}, p, ci)
-		},
 	}
 
 	conn, err := wrapSysConn(rawConn.(*net.UDPConn), config)
