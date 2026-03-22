@@ -18,6 +18,7 @@ import (
 	"github.com/GFW-knocker/Xray-core/common/serial"
 	"github.com/GFW-knocker/Xray-core/transport/internet"
 	"github.com/GFW-knocker/Xray-core/transport/internet/dnstt"
+	"github.com/GFW-knocker/Xray-core/transport/internet/vaydns"
 	"github.com/GFW-knocker/Xray-core/transport/internet/finalmask/header/dns"
 	"github.com/GFW-knocker/Xray-core/transport/internet/finalmask/header/dtls"
 	"github.com/GFW-knocker/Xray-core/transport/internet/finalmask/header/srtp"
@@ -233,6 +234,46 @@ func (c *DNSTTConfig) Build() (proto.Message, error) {
 	config := &dnstt.Config{
 		ServerPublicKey: c.ServerPublicKey,
 		ServerAddress:   c.ServerAddress,
+	}
+	return config, nil
+}
+
+type VayDNSConfig struct {
+	ServerPublicKey string  `json:"serverPublicKey"`
+	ServerAddress   string  `json:"serverAddress"`
+	ResolverType    string  `json:"resolverType"`
+	DnsttCompat     bool    `json:"dnsttCompat"`
+	ClientIDSize    int32   `json:"clientidSize"`
+	MaxQnameLen     int32   `json:"maxQnameLen"`
+	MaxNumLabels    int32   `json:"maxNumLabels"`
+	RPS             float64 `json:"rps"`
+	IdleTimeout     string  `json:"idleTimeout"`
+	Keepalive       string  `json:"keepalive"`
+	MaxStreams      int32   `json:"maxStreams"`
+	UDPWorkers      int32   `json:"udpWorkers"`
+	UDPTimeout      string  `json:"udpTimeout"`
+	UDPSharedSocket bool    `json:"udpSharedSocket"`
+	UDPAcceptErrors bool    `json:"udpAcceptErrors"`
+}
+
+// Build implements Buildable.
+func (c *VayDNSConfig) Build() (proto.Message, error) {
+	config := &vaydns.Config{
+		ServerPublicKey: c.ServerPublicKey,
+		ServerAddress:   c.ServerAddress,
+		ResolverType:    c.ResolverType,
+		DnsttCompat:     c.DnsttCompat,
+		ClientidSize:    c.ClientIDSize,
+		MaxQnameLen:     c.MaxQnameLen,
+		MaxNumLabels:    c.MaxNumLabels,
+		Rps:             c.RPS,
+		IdleTimeout:     c.IdleTimeout,
+		Keepalive:       c.Keepalive,
+		MaxStreams:       c.MaxStreams,
+		UdpWorkers:      c.UDPWorkers,
+		UdpTimeout:      c.UDPTimeout,
+		UdpSharedSocket: c.UDPSharedSocket,
+		UdpAcceptErrors: c.UDPAcceptErrors,
 	}
 	return config, nil
 }
@@ -1151,6 +1192,8 @@ func (p TransportProtocol) Build() (string, error) {
 		return "httpupgrade", nil
 	case "dnstt":
 		return "dnstt", nil
+	case "vaydns":
+		return "vaydns", nil
 	case "h2", "h3", "http":
 		return "", errors.PrintRemovedFeatureError("HTTP transport (without header padding, etc.)", "XHTTP stream-one H2 & H3")
 	case "quic":
@@ -1509,6 +1552,7 @@ type StreamConfig struct {
 	HTTPUPGRADESettings *HttpUpgradeConfig `json:"httpupgradeSettings"`
 	HysteriaSettings    *HysteriaConfig    `json:"hysteriaSettings"`
 	DNSTTSettings       *DNSTTConfig       `json:"dnsttSettings"`
+	VayDNSSettings      *VayDNSConfig      `json:"vaydnsSettings"`
 	SocketSettings      *SocketConfig      `json:"sockopt"`
 }
 
@@ -1659,6 +1703,17 @@ func (c *StreamConfig) Build() (*internet.StreamConfig, error) {
 		config.TransportSettings = append(config.TransportSettings, &internet.TransportConfig{
 			ProtocolName: "dnstt",
 			Settings:     serial.ToTypedMessage(ds),
+		})
+	}
+
+	if c.VayDNSSettings != nil {
+		vs, err := c.VayDNSSettings.Build()
+		if err != nil {
+			return nil, errors.New("Failed to build VayDNS config.").Base(err)
+		}
+		config.TransportSettings = append(config.TransportSettings, &internet.TransportConfig{
+			ProtocolName: "vaydns",
+			Settings:     serial.ToTypedMessage(vs),
 		})
 	}
 

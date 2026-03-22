@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package xray.transport.internet.vaydns;
+option csharp_namespace = "Xray.Transport.Internet.Vaydns";
+option go_package = "github.com/GFW-knocker/Xray-core/transport/internet/vaydns";
+option java_package = "com.xray.transport.internet.vaydns";
+option java_multiple_files = true;
+
+message Config {
+  string server_public_key = 1;
+  string server_address = 2;
+  string resolver_type = 3;
+  bool dnstt_compat = 4;
+  int32 clientid_size = 5;
+  int32 max_qname_len = 6;
+  int32 max_num_labels = 7;
+  double rps = 8;
+  string idle_timeout = 9;
+  string keepalive = 10;
+  int32 max_streams = 11;
+  int32 udp_workers = 12;
+  string udp_timeout = 13;
+  bool udp_shared_socket = 14;
+  bool udp_accept_errors = 15;
+}
