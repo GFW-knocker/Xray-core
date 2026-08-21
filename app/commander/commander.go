@@ -3,6 +3,7 @@ package commander
 import (
 	"context"
 	"net"
+	"strings"
 	"sync"
 
 	"github.com/GFW-knocker/Xray-core/common"
@@ -10,6 +11,7 @@ import (
 	"github.com/GFW-knocker/Xray-core/common/signal/done"
 	core "github.com/GFW-knocker/Xray-core/core"
 	"github.com/GFW-knocker/Xray-core/features/outbound"
+	"github.com/GFW-knocker/Xray-core/transport/internet"
 
 	"google.golang.org/grpc"
 )
@@ -68,20 +70,32 @@ func (c *Commander) Start() error {
 	}
 	c.Unlock()
 
-	var listen = func(listener net.Listener) {
+	listen := func(listener net.Listener) {
 		if err := c.server.Serve(listener); err != nil {
 			errors.LogErrorInner(context.Background(), err, "failed to start grpc server")
 		}
 	}
 
 	if len(c.listen) > 0 {
-		if l, err := net.Listen("tcp", c.listen); err != nil {
+		var addr net.Addr
+
+		if strings.HasPrefix(c.listen, "/") || strings.HasPrefix(c.listen, "@") {
+			addr = &net.UnixAddr{Name: c.listen, Net: "unix"}
+		} else {
+			tcpAddr, err := net.ResolveTCPAddr("tcp", c.listen)
+			if err != nil {
+				errors.LogErrorInner(context.Background(), err, "API server failed to parse listen address ", c.listen)
+				return err
+			}
+			addr = tcpAddr
+		}
+		l, err := internet.ListenSystem(context.Background(), addr, nil)
+		if err != nil {
 			errors.LogErrorInner(context.Background(), err, "API server failed to listen on ", c.listen)
 			return err
-		} else {
-			errors.LogInfo(context.Background(), "API server listening on ", l.Addr())
-			go listen(l)
 		}
+		errors.LogInfo(context.Background(), "API server listening on ", l.Addr())
+		go listen(l)
 		return nil
 	}
 

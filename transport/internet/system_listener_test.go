@@ -8,16 +8,14 @@ import (
 
 	"github.com/GFW-knocker/Xray-core/common"
 	"github.com/GFW-knocker/Xray-core/transport/internet"
-	"github.com/sagernet/sing/common/control"
 )
 
 func TestRegisterListenerController(t *testing.T) {
 	var gotFd uintptr
 
-	common.Must(internet.RegisterListenerController(func(network, address string, conn syscall.RawConn) error {
-		return control.Raw(conn, func(fd uintptr) error {
+	common.Must(internet.RegisterListenerController(func(network, address string, c syscall.RawConn) error {
+		return c.Control(func(fd uintptr) {
 			gotFd = fd
-			return nil
 		})
 	}))
 

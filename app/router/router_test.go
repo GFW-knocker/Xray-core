@@ -7,6 +7,7 @@ import (
 	"github.com/golang/mock/gomock"
 	. "github.com/GFW-knocker/Xray-core/app/router"
 	"github.com/GFW-knocker/Xray-core/common"
+	"github.com/GFW-knocker/Xray-core/common/geodata"
 	"github.com/GFW-knocker/Xray-core/common/net"
 	"github.com/GFW-knocker/Xray-core/common/session"
 	"github.com/GFW-knocker/Xray-core/features/dns"
@@ -155,12 +156,11 @@ func TestIPOnDemand(t *testing.T) {
 				TargetTag: &RoutingRule_Tag{
 					Tag: "test",
 				},
-				Geoip: []*GeoIP{
+				Ip: []*geodata.IPRule{
 					{
-						Cidr: []*CIDR{
-							{
-								Ip:     []byte{192, 168, 0, 0},
-								Prefix: 16,
+						Value: &geodata.IPRule_Custom{
+							Custom: &geodata.CIDRRule{
+								Cidr: &geodata.CIDR{Ip: []byte{192, 168, 0, 0}, Prefix: 16},
 							},
 						},
 					},
@@ -200,12 +200,11 @@ func TestIPIfNonMatchDomain(t *testing.T) {
 				TargetTag: &RoutingRule_Tag{
 					Tag: "test",
 				},
-				Geoip: []*GeoIP{
+				Ip: []*geodata.IPRule{
 					{
-						Cidr: []*CIDR{
-							{
-								Ip:     []byte{192, 168, 0, 0},
-								Prefix: 16,
+						Value: &geodata.IPRule_Custom{
+							Custom: &geodata.CIDRRule{
+								Cidr: &geodata.CIDR{Ip: []byte{192, 168, 0, 0}, Prefix: 16},
 							},
 						},
 					},
@@ -245,12 +244,11 @@ func TestIPIfNonMatchIP(t *testing.T) {
 				TargetTag: &RoutingRule_Tag{
 					Tag: "test",
 				},
-				Geoip: []*GeoIP{
+				Ip: []*geodata.IPRule{
 					{
-						Cidr: []*CIDR{
-							{
-								Ip:     []byte{127, 0, 0, 0},
-								Prefix: 8,
+						Value: &geodata.IPRule_Custom{
+							Custom: &geodata.CIDRRule{
+								Cidr: &geodata.CIDR{Ip: []byte{127, 0, 0, 0}, Prefix: 8},
 							},
 						},
 					},

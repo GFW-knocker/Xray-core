@@ -9,6 +9,7 @@ import (
 	"github.com/GFW-knocker/Xray-core/common/errors"
 	"github.com/GFW-knocker/Xray-core/common/net"
 	"github.com/GFW-knocker/Xray-core/common/session"
+	"github.com/GFW-knocker/Xray-core/common/signal"
 	"github.com/GFW-knocker/Xray-core/common/singbridge"
 	"github.com/GFW-knocker/Xray-core/transport"
 	"github.com/GFW-knocker/Xray-core/transport/internet"
@@ -18,7 +19,6 @@ import (
 	B "github.com/sagernet/sing/common/buf"
 	"github.com/sagernet/sing/common/bufio"
 	N "github.com/sagernet/sing/common/network"
-	"github.com/sagernet/sing/common/uot"
 )
 
 func init() {
@@ -28,10 +28,9 @@ func init() {
 }
 
 type Outbound struct {
-	ctx       context.Context
-	server    net.Destination
-	method    shadowsocks.Method
-	uotClient *uot.Client
+	ctx    context.Context
+	server net.Destination
+	method shadowsocks.Method
 }
 
 func NewClient(ctx context.Context, config *ClientConfig) (*Outbound, error) {
@@ -54,9 +53,6 @@ func NewClient(ctx context.Context, config *ClientConfig) (*Outbound, error) {
 		o.method = method
 	} else {
 		return nil, errors.New("unknown method ", config.Method)
-	}
-	if config.UdpOverTcp {
-		o.uotClient = &uot.Client{Version: uint8(config.UdpOverTcpVersion)}
 	}
 	return o, nil
 }
@@ -81,11 +77,7 @@ func (o *Outbound) Process(ctx context.Context, link *transport.Link, dialer int
 	errors.LogInfo(ctx, "tunneling request to ", destination, " via ", o.server.NetAddr())
 
 	serverDestination := o.server
-	if o.uotClient != nil {
-		serverDestination.Network = net.Network_TCP
-	} else {
-		serverDestination.Network = network
-	}
+	serverDestination.Network = network
 	connection, err := dialer.Dial(ctx, serverDestination)
 	if err != nil {
 		return errors.New("failed to connect to server").Base(err)
@@ -142,18 +134,13 @@ func (o *Outbound) Process(ctx context.Context, link *transport.Link, dialer int
 				Writer: link.Writer,
 				Conn:   inboundConn,
 				Dest:   destination,
+				T: signal.CancelAfterInactivity(ctx, func() {
+					common.Interrupt(link.Reader)
+				}, 300*time.Second),
 			}
 		}
 
-		if o.uotClient != nil {
-			uConn, err := o.uotClient.DialEarlyConn(o.method.DialEarlyConn(connection, uot.RequestDestination(o.uotClient.Version)), false, singbridge.ToSocksaddr(destination))
-			if err != nil {
-				return err
-			}
-			return singbridge.ReturnError(bufio.CopyPacketConn(ctx, packetConn, uConn))
-		} else {
-			serverConn := o.method.DialPacketConn(connection)
-			return singbridge.ReturnError(bufio.CopyPacketConn(ctx, packetConn, serverConn))
-		}
+		serverConn := o.method.DialPacketConn(connection)
+		return singbridge.ReturnError(bufio.CopyPacketConn(ctx, packetConn, serverConn))
 	}
 }

@@ -49,45 +49,31 @@ func ApplyECH(c *Config, config *tls.Config) error {
 
 	// for client
 	if len(c.EchConfigList) != 0 {
-		ECHForceQuery := c.EchForceQuery
-		switch ECHForceQuery {
-		case "none", "half", "full":
-		case "":
-			ECHForceQuery = "none" // default to none
-		default:
-			panic("Invalid ECHForceQuery: " + c.EchForceQuery)
-		}
 		defer func() {
-			// if failed to get ECHConfig, use an invalid one to make connection fail
-			if err != nil || len(ECHConfig) == 0 {
-				if ECHForceQuery == "full" {
-					ECHConfig = []byte{1, 1, 4, 5, 1, 4}
-				}
-			}
+			// GFW-knocker: fall back to a normal connection when no ECH config could be
+			// obtained, rather than forcing an invalid one to make the handshake fail.
 			config.EncryptedClientHelloConfigList = ECHConfig
 		}()
-		// direct base64 config
+		// query config from dns
 		if strings.Contains(c.EchConfigList, "://") {
-			// query config from dns
-			parts := strings.Split(c.EchConfigList, "+")
+			// parse ECH DNS server in format of "example.com+https://1.1.1.1/dns-query"
+			parts := strings.SplitN(c.EchConfigList, "+", 2)
 			if len(parts) == 2 {
-				// parse ECH DNS server in format of "example.com+https://1.1.1.1/dns-query"
 				nameToQuery = parts[0]
 				DNSServer = parts[1]
-			} else if len(parts) == 1 {
+			} else {
 				// normal format
 				DNSServer = parts[0]
-			} else {
-				return errors.New("Invalid ECH DNS server format: ", c.EchConfigList)
 			}
 			if nameToQuery == "" {
 				return errors.New("Using DNS for ECH Config needs serverName or use Server format example.com+https://1.1.1.1/dns-query")
 			}
-			ECHConfig, err = QueryRecord(nameToQuery, DNSServer, c.EchForceQuery, c.EchSocketSettings)
+			ECHConfig, err = QueryRecord(nameToQuery, DNSServer, c.EchSocketSettings)
 			if err != nil {
 				return errors.New("Failed to query ECH DNS record for domain: ", nameToQuery, " at server: ", DNSServer).Base(err)
 			}
 		} else {
+			// direct base64 config
 			ECHConfig, err = base64.StdEncoding.DecodeString(c.EchConfigList)
 			if err != nil {
 				return errors.New("Failed to unmarshal ECHConfigList: ", err)
@@ -107,7 +93,6 @@ type ECHConfigCache struct {
 type echConfigRecord struct {
 	config []byte
 	expire time.Time
-	err    error
 }
 
 var (
@@ -125,39 +110,34 @@ func ECHCacheKey(server, domain string, sockopt *internet.SocketConfig) string {
 // Update updates the ECH config for given domain and server.
 // this method is concurrent safe, only one update request will be sent, others get the cache.
 // if isLockedUpdate is true, it will not try to acquire the lock.
-func (c *ECHConfigCache) Update(domain string, server string, isLockedUpdate bool, forceQuery string, sockopt *internet.SocketConfig) ([]byte, error) {
+func (c *ECHConfigCache) Update(domain string, server string, isLockedUpdate bool, sockopt *internet.SocketConfig) ([]byte, error) {
 	if !isLockedUpdate {
 		c.UpdateLock.Lock()
 		defer c.UpdateLock.Unlock()
 	}
 	// Double check cache after acquiring lock
 	configRecord := c.configRecord.Load()
-	if configRecord.expire.After(time.Now()) && configRecord.err == nil {
+	if configRecord.expire.After(time.Now()) {
 		errors.LogDebug(context.Background(), "Cache hit for domain after double check: ", domain)
-		return configRecord.config, configRecord.err
+		return configRecord.config, nil
 	}
 	// Query ECH config from DNS server
 	errors.LogDebug(context.Background(), "Trying to query ECH config for domain: ", domain, " with ECH server: ", server)
 	echConfig, ttl, err := dnsQuery(server, domain, sockopt)
-	// if in "full", directly return
-	if err != nil && forceQuery == "full" {
+	if err != nil {
 		return nil, err
-	}
-	if ttl == 0 {
-		ttl = dns2.DefaultTTL
 	}
 	configRecord = &echConfigRecord{
 		config: echConfig,
 		expire: time.Now().Add(time.Duration(ttl) * time.Second),
-		err:    err,
 	}
 	c.configRecord.Store(configRecord)
-	return configRecord.config, configRecord.err
+	return configRecord.config, nil
 }
 
 // QueryRecord returns the ECH config for given domain.
 // If the record is not in cache or expired, it will query the DNS server and update the cache.
-func QueryRecord(domain string, server string, forceQuery string, sockopt *internet.SocketConfig) ([]byte, error) {
+func QueryRecord(domain string, server string, sockopt *internet.SocketConfig) ([]byte, error) {
 	GlobalECHConfigCacheKey := ECHCacheKey(server, domain, sockopt)
 	echConfigCache, ok := GlobalECHConfigCache.Load(GlobalECHConfigCacheKey)
 	if !ok {
@@ -166,25 +146,25 @@ func QueryRecord(domain string, server string, forceQuery string, sockopt *inter
 		echConfigCache, _ = GlobalECHConfigCache.LoadOrStore(GlobalECHConfigCacheKey, echConfigCache)
 	}
 	configRecord := echConfigCache.configRecord.Load()
-	if configRecord.expire.After(time.Now()) && (configRecord.err == nil || forceQuery == "none") {
+	if configRecord.expire.After(time.Now()) {
 		errors.LogDebug(context.Background(), "Cache hit for domain: ", domain)
-		return configRecord.config, configRecord.err
+		return configRecord.config, nil
 	}
 
 	// If expire is zero value, it means we are in initial state, wait for the query to finish
 	// otherwise return old value immediately and update in a goroutine
 	// but if the cache is too old, wait for update
-	if configRecord.expire == (time.Time{}) || configRecord.expire.Add(time.Hour*6).Before(time.Now()) {
-		return echConfigCache.Update(domain, server, false, forceQuery, sockopt)
+	if configRecord.expire.IsZero() || configRecord.expire.Add(time.Hour*6).Before(time.Now()) {
+		return echConfigCache.Update(domain, server, false, sockopt)
 	} else {
 		// If someone already acquired the lock, it means it is updating, do not start another update goroutine
 		if echConfigCache.UpdateLock.TryLock() {
 			go func() {
 				defer echConfigCache.UpdateLock.Unlock()
-				echConfigCache.Update(domain, server, true, forceQuery, sockopt)
+				echConfigCache.Update(domain, server, true, sockopt)
 			}()
 		}
-		return configRecord.config, configRecord.err
+		return configRecord.config, nil
 	}
 }
 
@@ -251,6 +231,9 @@ func dnsQuery(server string, domain string, sockopt *internet.SocketConfig) ([]b
 		if err != nil {
 			return nil, 0, err
 		}
+		// h2c: in config is just for claim
+		// change scheme to https and expect outbound to handle TLS (freedom + tlsSetting)
+		req.URL.Scheme = "https"
 		req.Header.Set("Accept", "application/dns-message")
 		req.Header.Set("Content-Type", "application/dns-message")
 		utils.TryDefaultHeadersWith(req.Header, "fetch")
@@ -270,14 +253,17 @@ func dnsQuery(server string, domain string, sockopt *internet.SocketConfig) ([]b
 		}
 		dnsResolve = respBody
 	} else if strings.HasPrefix(server, "udp://") { // for classic udp dns server
-		udpServerAddr := server[len("udp://"):]
-		// default port 53 if not specified
-		if !strings.Contains(udpServerAddr, ":") {
-			udpServerAddr = udpServerAddr + ":53"
-		}
-		dest, err := net.ParseDestination("udp" + ":" + udpServerAddr)
+		udpServerURL, err := url.Parse(server)
 		if err != nil {
-			return nil, 0, errors.New("failed to parse udp dns server ", udpServerAddr, " for ECH: ", err)
+			return nil, 0, errors.New("failed to parse udp dns server ", server, " for ECH: ", err)
+		}
+		// default port 53 if not specified
+		if udpServerURL.Port() == "" {
+			udpServerURL.Host = udpServerURL.Host + ":53"
+		}
+		dest, err := net.ParseDestination("udp" + ":" + udpServerURL.Host)
+		if err != nil {
+			return nil, 0, errors.New("failed to parse udp dns server ", udpServerURL.Host, " for ECH: ", err)
 		}
 		dnsTimeoutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -322,7 +308,8 @@ func dnsQuery(server string, domain string, sockopt *internet.SocketConfig) ([]b
 			}
 		}
 	}
-	// empty is valid, means no ECH config found
+	// GFW-knocker: an empty answer is valid -- it just means the domain has no ECH
+	// config, so report success and let the caller connect without ECH.
 	return nil, dns2.DefaultTTL, nil
 }
 
@@ -344,9 +331,7 @@ func ConvertToGoECHKeys(data []byte) ([]tls.EncryptedClientHelloKey, error) {
 			return keys, ErrInvalidLen
 		}
 		child := cryptobyte.String(s[:2+keyLength+2+configLength])
-		var (
-			sk, config cryptobyte.String
-		)
+		var sk, config cryptobyte.String
 		if !child.ReadUint16LengthPrefixed(&sk) || !child.ReadUint16LengthPrefixed(&config) || !child.Empty() {
 			return keys, ErrInvalidLen
 		}

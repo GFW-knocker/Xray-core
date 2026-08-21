@@ -20,6 +20,7 @@ import (
 	// Other optional features.
 	_ "github.com/GFW-knocker/Xray-core/app/dns"
 	_ "github.com/GFW-knocker/Xray-core/app/dns/fakedns"
+	_ "github.com/GFW-knocker/Xray-core/app/geodata"
 	_ "github.com/GFW-knocker/Xray-core/app/log"
 	_ "github.com/GFW-knocker/Xray-core/app/metrics"
 	_ "github.com/GFW-knocker/Xray-core/app/policy"

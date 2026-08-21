@@ -331,6 +331,9 @@ func (r *RandCarrier) verifyPeerCert(rawCerts [][]byte, verifiedChains [][]*x509
 	}
 
 	if verifyResult == foundCA { // if found CA, we need to verify here
+		if len(r.Config.ServerName) == 0 {
+			return errors.New("Pinning CA needs a valid ServerName")
+		}
 		opts := x509.VerifyOptions{
 			Roots:         CAs,
 			CurrentTime:   time.Now(),
@@ -381,7 +384,7 @@ func (c *Config) GetTLSConfig(opts ...Option) *tls.Config {
 		PinnedPeerCertSha256: c.PinnedPeerCertSha256,
 	}
 	config := &tls.Config{
-		InsecureSkipVerify:     c.AllowInsecure,
+		InsecureSkipVerify:     c.AllowInsecure, // GFW-knocker: restored
 		Rand:                   randCarrier,
 		ClientSessionCache:     globalSessionCache,
 		RootCAs:                root,
@@ -451,15 +454,19 @@ func (c *Config) GetTLSConfig(opts ...Option) *tls.Config {
 		for _, s := range tls.CipherSuites() {
 			id[s.Name] = s.ID
 		}
-		for _, n := range strings.Split(c.CipherSuites, ":") {
-			if id[n] != 0 {
-				config.CipherSuites = append(config.CipherSuites, id[n])
+		for _, s := range tls.InsecureCipherSuites() {
+			id[s.Name] = s.ID
+		}
+		for n := range strings.SplitSeq(c.CipherSuites, ":") {
+			n = strings.TrimSpace(n)
+			if v, ok := id[n]; ok {
+				config.CipherSuites = append(config.CipherSuites, v)
 			}
 		}
 	}
 
 	if len(c.MasterKeyLog) > 0 && c.MasterKeyLog != "none" {
-		writer, err := os.OpenFile(c.MasterKeyLog, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0644)
+		writer, err := os.OpenFile(c.MasterKeyLog, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0o644)
 		if err != nil {
 			errors.LogErrorInner(context.Background(), err, "failed to open ", c.MasterKeyLog, " as master key log")
 		} else {
@@ -469,11 +476,7 @@ func (c *Config) GetTLSConfig(opts ...Option) *tls.Config {
 	if len(c.EchConfigList) > 0 || len(c.EchServerKeys) > 0 {
 		err := ApplyECH(c, config)
 		if err != nil {
-			if c.EchForceQuery == "full" {
-				errors.LogError(context.Background(), err)
-			} else {
-				errors.LogInfo(context.Background(), err)
-			}
+			errors.LogError(context.Background(), err)
 		}
 	}
 

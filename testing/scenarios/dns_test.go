@@ -9,6 +9,7 @@ import (
 	"github.com/GFW-knocker/Xray-core/app/proxyman"
 	"github.com/GFW-knocker/Xray-core/app/router"
 	"github.com/GFW-knocker/Xray-core/common"
+	"github.com/GFW-knocker/Xray-core/common/geodata"
 	"github.com/GFW-knocker/Xray-core/common/net"
 	"github.com/GFW-knocker/Xray-core/common/serial"
 	"github.com/GFW-knocker/Xray-core/core"
@@ -34,8 +35,7 @@ func TestResolveIP(t *testing.T) {
 			serial.ToTypedMessage(&dns.Config{
 				StaticHosts: []*dns.Config_HostMapping{
 					{
-						Type:   dns.DomainMatchingType_Full,
-						Domain: "google.com",
+						Domain: &geodata.DomainRule{Value: &geodata.DomainRule_Custom{Custom: &geodata.Domain{Type: geodata.Domain_Full, Value: "google.com"}}},
 						Ip:     [][]byte{dest.Address.IP()},
 					},
 				},
@@ -44,12 +44,11 @@ func TestResolveIP(t *testing.T) {
 				DomainStrategy: router.Config_IpIfNonMatch,
 				Rule: []*router.RoutingRule{
 					{
-						Geoip: []*router.GeoIP{
+						Ip: []*geodata.IPRule{
 							{
-								Cidr: []*router.CIDR{
-									{
-										Ip:     []byte{127, 0, 0, 0},
-										Prefix: 8,
+								Value: &geodata.IPRule_Custom{
+									Custom: &geodata.CIDRRule{
+										Cidr: &geodata.CIDR{Ip: []byte{127, 0, 0, 0}, Prefix: 8},
 									},
 								},
 							},

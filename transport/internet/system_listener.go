@@ -12,16 +12,15 @@ import (
 	"github.com/GFW-knocker/Xray-core/common/errors"
 	"github.com/GFW-knocker/Xray-core/common/net"
 	"github.com/pires/go-proxyproto"
-	"github.com/sagernet/sing/common/control"
 )
 
 var effectiveListener = DefaultListener{}
 
 type DefaultListener struct {
-	controllers []control.Func
+	controllers []func(network, address string, c syscall.RawConn) error
 }
 
-func getControlFunc(ctx context.Context, sockopt *SocketConfig, controllers []control.Func) func(network, address string, c syscall.RawConn) error {
+func getControlFunc(ctx context.Context, sockopt *SocketConfig, controllers []func(network, address string, c syscall.RawConn) error) func(network, address string, c syscall.RawConn) error {
 	return func(network, address string, c syscall.RawConn) error {
 		return c.Control(func(fd uintptr) {
 			for _, controller := range controllers {
@@ -186,7 +185,7 @@ func (dl *DefaultListener) ListenPacket(ctx context.Context, addr net.Addr, sock
 // The controller can be used to operate on file descriptors before they are put into use.
 //
 // xray:api:beta
-func RegisterListenerController(controller control.Func) error {
+func RegisterListenerController(controller func(network, address string, c syscall.RawConn) error) error {
 	if controller == nil {
 		return errors.New("nil listener controller")
 	}

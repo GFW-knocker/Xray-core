@@ -7,6 +7,7 @@ import (
 	"github.com/GFW-knocker/Xray-core/common/errors"
 	"github.com/GFW-knocker/Xray-core/common/protocol"
 	"github.com/GFW-knocker/Xray-core/common/serial"
+	"github.com/GFW-knocker/Xray-core/common/task"
 	"github.com/GFW-knocker/Xray-core/common/uuid"
 	"github.com/GFW-knocker/Xray-core/proxy/vmess"
 	"github.com/GFW-knocker/Xray-core/proxy/vmess/inbound"
@@ -30,10 +31,6 @@ func (a *VMessAccount) Build() *vmess.Account {
 		st = protocol.SecurityType_CHACHA20_POLY1305
 	case "auto":
 		st = protocol.SecurityType_AUTO
-	case "none":
-		st = protocol.SecurityType_NONE
-	case "zero":
-		st = protocol.SecurityType_ZERO
 	default:
 		st = protocol.SecurityType_AUTO
 	}
@@ -58,7 +55,8 @@ func (c *VMessDefaultConfig) Build() *inbound.DefaultConfig {
 }
 
 type VMessInboundConfig struct {
-	Users    []json.RawMessage   `json:"clients"`
+	Users    []json.RawMessage   `json:"users"`
+	Clients  []json.RawMessage   `json:"clients"`
 	Defaults *VMessDefaultConfig `json:"default"`
 }
 
@@ -72,25 +70,33 @@ func (c *VMessInboundConfig) Build() (proto.Message, error) {
 		config.Default = c.Defaults.Build()
 	}
 
+	if c.Clients != nil {
+		c.Users = c.Clients
+	}
 	config.User = make([]*protocol.User, len(c.Users))
-	for idx, rawData := range c.Users {
+	processUser := func(idx int) error {
+		rawData := c.Users[idx]
 		user := new(protocol.User)
 		if err := json.Unmarshal(rawData, user); err != nil {
-			return nil, errors.New("invalid VMess user").Base(err)
+			return errors.New("invalid VMess user").Base(err)
 		}
 		account := new(VMessAccount)
 		if err := json.Unmarshal(rawData, account); err != nil {
-			return nil, errors.New("invalid VMess user").Base(err)
+			return errors.New("invalid VMess user").Base(err)
 		}
 
 		u, err := uuid.ParseString(account.ID)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		account.ID = u.String()
 
 		user.Account = serial.ToTypedMessage(account.Build())
 		config.User[idx] = user
+		return nil
+	}
+	if err := task.ParallelForN(len(c.Users), processUser); err != nil {
+		return nil, err
 	}
 
 	return config, nil

@@ -6,7 +6,11 @@ import (
 	"time"
 
 	"github.com/GFW-knocker/Xray-core/common"
+	"github.com/GFW-knocker/Xray-core/common/buf"
+	"github.com/GFW-knocker/Xray-core/common/dice"
+	"github.com/GFW-knocker/Xray-core/common/net"
 	"github.com/GFW-knocker/Xray-core/common/session"
+	"github.com/GFW-knocker/Xray-core/common/signal"
 	"github.com/GFW-knocker/Xray-core/transport"
 	"github.com/GFW-knocker/Xray-core/transport/internet"
 )
@@ -38,7 +42,17 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
 		// Sleep a little here to make sure the response is sent to client.
 		time.Sleep(time.Second)
 	}
-	common.Interrupt(link.Writer)
+	defer common.Interrupt(link.Writer)
+	defer common.Interrupt(link.Reader)
+	// wait to drain all the possible incoming UDP data
+	if ob.Target.Network == net.Network_UDP {
+		ctx, cancel := context.WithCancel(ctx)
+		timer := signal.CancelAfterInactivity(ctx, func() {
+			cancel()
+		}, time.Duration(30+dice.Roll(61))*time.Second)
+		go buf.Copy(link.Reader, buf.Discard, buf.UpdateActivity(timer))
+		<-ctx.Done()
+	}
 	return nil
 }
 

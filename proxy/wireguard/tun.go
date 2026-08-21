@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/netip"
 	"runtime"
 	"strconv"
 	"strings"
@@ -13,9 +12,7 @@ import (
 
 	"github.com/GFW-knocker/Xray-core/common/buf"
 	"github.com/GFW-knocker/Xray-core/common/errors"
-	"github.com/GFW-knocker/Xray-core/common/log"
 	"github.com/GFW-knocker/Xray-core/common/net"
-	"github.com/GFW-knocker/Xray-core/proxy/wireguard/gvisortun"
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
@@ -25,76 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 	"gvisor.dev/gvisor/pkg/waiter"
-
-	"github.com/GFW-knocker/wireguard/conn"
-	"github.com/GFW-knocker/wireguard/device"
-	"github.com/GFW-knocker/wireguard/tun"
 )
-
-type tunCreator func(localAddresses []netip.Addr, mtu int, handler promiscuousModeHandler) (Tunnel, error)
-
-type promiscuousModeHandler func(dest net.Destination, conn net.Conn)
-
-type Tunnel interface {
-	BuildDevice(ipc string, bind conn.Bind) error
-	DialContextTCPAddrPort(ctx context.Context, addr netip.AddrPort) (net.Conn, error)
-	DialUDPAddrPort(laddr, raddr netip.AddrPort) (net.Conn, error)
-	Close() error
-}
-
-type tunnel struct {
-	tun    tun.Device
-	device *device.Device
-	rw     sync.Mutex
-}
-
-func (t *tunnel) BuildDevice(ipc string, bind conn.Bind) (err error) {
-	t.rw.Lock()
-	defer t.rw.Unlock()
-
-	if t.device != nil {
-		return errors.New("device is already initialized")
-	}
-
-	logger := &device.Logger{
-		Verbosef: func(format string, args ...any) {
-			log.Record(&log.GeneralMessage{
-				Severity: log.Severity_Debug,
-				Content:  fmt.Sprintf(format, args...),
-			})
-		},
-		Errorf: func(format string, args ...any) {
-			log.Record(&log.GeneralMessage{
-				Severity: log.Severity_Error,
-				Content:  fmt.Sprintf(format, args...),
-			})
-		},
-	}
-
-	t.device = device.NewDevice(t.tun, bind, logger)
-	if err = t.device.IpcSet(ipc); err != nil {
-		return err
-	}
-	if err = t.device.Up(); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (t *tunnel) Close() (err error) {
-	t.rw.Lock()
-	defer t.rw.Unlock()
-
-	if t.device == nil {
-		return nil
-	}
-
-	t.device.Close()
-	t.device = nil
-	err = t.tun.Close()
-	t.tun = nil
-	return nil
-}
 
 func CalculateInterfaceName(name string) (tunName string) {
 	if runtime.GOOS == "darwin" {
@@ -121,88 +49,61 @@ func CalculateInterfaceName(name string) (tunName string) {
 	return
 }
 
-var _ Tunnel = (*gvisorNet)(nil)
+func createForwarder(gstack *stack.Stack, handler func(conn net.Conn, dest net.Destination)) {
+	gstack.SetPromiscuousMode(1, true)
+	gstack.SetSpoofing(1, true)
 
-type gvisorNet struct {
-	tunnel
-	net *gvisortun.Net
-}
+	tcpForwarder := tcp.NewForwarder(gstack, 0, 65535, func(r *tcp.ForwarderRequest) {
+		go func(r *tcp.ForwarderRequest) {
+			var wq waiter.Queue
+			id := r.ID()
 
-func (g *gvisorNet) Close() error {
-	return g.tunnel.Close()
-}
+			ep, err := r.CreateEndpoint(&wq)
+			if err != nil {
+				errors.LogError(context.Background(), err.String())
+				r.Complete(true)
+				return
+			}
 
-func (g *gvisorNet) DialContextTCPAddrPort(ctx context.Context, addr netip.AddrPort) (
-	net.Conn, error,
-) {
-	return g.net.DialContextTCPAddrPort(ctx, addr)
-}
+			options := ep.SocketOptions()
+			options.SetKeepAlive(false)
+			options.SetReuseAddress(true)
+			options.SetReusePort(true)
 
-func (g *gvisorNet) DialUDPAddrPort(laddr, raddr netip.AddrPort) (net.Conn, error) {
-	return g.net.DialUDPAddrPort(laddr, raddr)
-}
+			handler(gonet.NewTCPConn(&wq, ep), net.TCPDestination(net.IPAddress(id.LocalAddress.AsSlice()), net.Port(id.LocalPort)))
 
-func createGVisorTun(localAddresses []netip.Addr, mtu int, handler promiscuousModeHandler) (Tunnel, error) {
-	out := &gvisorNet{}
-	tun, n, gstack, err := gvisortun.CreateNetTUN(localAddresses, mtu, handler != nil)
-	if err != nil {
-		return nil, err
+			ep.Close()
+			r.Complete(false)
+		}(r)
+	})
+	gstack.SetTransportProtocolHandler(tcp.ProtocolNumber, tcpForwarder.HandlePacket)
+
+	manager := &udpManager{
+		stack:   gstack,
+		handler: handler,
+		m:       make(map[string]*udpConn),
 	}
 
-	if handler != nil {
-		// handler is only used for promiscuous mode
-		// capture all packets and send to handler
-
-		tcpForwarder := tcp.NewForwarder(gstack, 0, 65535, func(r *tcp.ForwarderRequest) {
-			go func(r *tcp.ForwarderRequest) {
-				var wq waiter.Queue
-				var id = r.ID()
-
-				ep, err := r.CreateEndpoint(&wq)
-				if err != nil {
-					errors.LogError(context.Background(), err.String())
-					r.Complete(true)
-					return
-				}
-
-				options := ep.SocketOptions()
-				options.SetKeepAlive(false)
-				options.SetReuseAddress(true)
-				options.SetReusePort(true)
-
-				handler(net.TCPDestination(net.IPAddress(id.LocalAddress.AsSlice()), net.Port(id.LocalPort)), gonet.NewTCPConn(&wq, ep))
-
-				ep.Close()
-				r.Complete(false)
-			}(r)
-		})
-		gstack.SetTransportProtocolHandler(tcp.ProtocolNumber, tcpForwarder.HandlePacket)
-
-		manager := &udpManager{
-			stack:   gstack,
-			handler: handler,
-			m:       make(map[string]*udpConn),
+	gstack.SetTransportProtocolHandler(udp.ProtocolNumber, func(id stack.TransportEndpointID, pkt *stack.PacketBuffer) bool {
+		data := pkt.Clone().Data().AsRange().ToSlice()
+		// if len(data) == 0 {
+		// 	return false
+		// }
+		srcIP := net.IPAddress(id.RemoteAddress.AsSlice())
+		dstIP := net.IPAddress(id.LocalAddress.AsSlice())
+		if srcIP == nil || dstIP == nil {
+			panic(id)
 		}
-
-		gstack.SetTransportProtocolHandler(udp.ProtocolNumber, func(id stack.TransportEndpointID, pkt *stack.PacketBuffer) bool {
-			data := pkt.Clone().Data().AsRange().ToSlice()
-			// if len(data) == 0 {
-			// 	return false
-			// }
-			src := net.UDPDestination(net.IPAddress(id.RemoteAddress.AsSlice()), net.Port(id.RemotePort))
-			dst := net.UDPDestination(net.IPAddress(id.LocalAddress.AsSlice()), net.Port(id.LocalPort))
-			manager.feed(src, dst, data)
-			return true
-		})
-	}
-
-	out.tun, out.net = tun, n
-	return out, nil
+		src := net.UDPDestination(srcIP, net.Port(id.RemotePort))
+		dst := net.UDPDestination(dstIP, net.Port(id.LocalPort))
+		manager.feed(src, dst, data)
+		return true
+	})
 }
 
 type udpManager struct {
 	stack   *stack.Stack
-	handler func(dest net.Destination, conn net.Conn)
+	handler func(conn net.Conn, dest net.Destination)
 	m       map[string]*udpConn
 	mutex   sync.RWMutex
 }
@@ -212,8 +113,12 @@ func (m *udpManager) feed(src net.Destination, dst net.Destination, data []byte)
 	uc, ok := m.m[src.NetAddr()]
 	if ok {
 		select {
-		case uc.ch <- data:
+		case uc.queue <- &packet{
+			p:    data,
+			dest: &dst,
+		}:
 		default:
+			errors.LogDebug(context.Background(), "drop udp with size ", len(data), " to ", dst.NetAddr(), " original ", uc.dst.NetAddr(), " > queue full")
 		}
 		m.mutex.RUnlock()
 		return
@@ -226,9 +131,9 @@ func (m *udpManager) feed(src net.Destination, dst net.Destination, data []byte)
 	uc, ok = m.m[src.NetAddr()]
 	if !ok {
 		uc = &udpConn{
-			ch:  make(chan []byte, 1024),
-			src: src,
-			dst: dst,
+			queue: make(chan *packet, 1024),
+			src:   src,
+			dst:   dst,
 		}
 		uc.writeFunc = m.writeRawUDPPacket
 		uc.closeFunc = func() {
@@ -237,19 +142,23 @@ func (m *udpManager) feed(src net.Destination, dst net.Destination, data []byte)
 			m.mutex.Unlock()
 		}
 		m.m[src.NetAddr()] = uc
-		go m.handler(dst, uc)
+		go m.handler(uc, dst)
 	}
 
 	select {
-	case uc.ch <- data:
+	case uc.queue <- &packet{
+		p:    data,
+		dest: &dst,
+	}:
 	default:
+		errors.LogDebug(context.Background(), "drop udp with size ", len(data), " to ", dst.NetAddr(), " original ", uc.dst.NetAddr(), " > queue full 2")
 	}
 }
 
 func (m *udpManager) close(uc *udpConn) {
 	if !uc.closed {
 		uc.closed = true
-		close(uc.ch)
+		close(uc.queue)
 		delete(m.m, uc.src.NetAddr())
 	}
 }
@@ -317,8 +226,13 @@ func (m *udpManager) writeRawUDPPacket(payload []byte, src net.Destination, dst 
 	return nil
 }
 
+type packet struct {
+	p    []byte
+	dest *net.Destination
+}
+
 type udpConn struct {
-	ch        chan []byte
+	queue     chan *packet
 	src       net.Destination
 	dst       net.Destination
 	writeFunc func(payload []byte, src net.Destination, dst net.Destination) error
@@ -326,13 +240,33 @@ type udpConn struct {
 	closed    bool
 }
 
+func (c *udpConn) ReadMultiBuffer() (buf.MultiBuffer, error) {
+	for {
+		q, ok := <-c.queue
+		if !ok {
+			return nil, io.EOF
+		}
+
+		b := buf.New()
+		if _, err := b.Write(q.p); err != nil {
+			errors.LogErrorInner(context.Background(), err, "drop packet to ", q.dest, " with size ", len(q.p))
+			b.Release()
+			continue
+		}
+
+		b.UDP = q.dest
+
+		return buf.MultiBuffer{b}, nil
+	}
+}
+
 func (c *udpConn) Read(p []byte) (int, error) {
-	b, ok := <-c.ch
+	q, ok := <-c.queue
 	if !ok {
 		return 0, io.EOF
 	}
-	n := copy(p, b)
-	if n != len(b) {
+	n := copy(p, q.p)
+	if n != len(q.p) {
 		return 0, io.ErrShortBuffer
 	}
 	return n, nil
@@ -342,7 +276,11 @@ func (c *udpConn) WriteMultiBuffer(mb buf.MultiBuffer) error {
 	for i, b := range mb {
 		dst := c.dst
 		if b.UDP != nil {
-			dst = *b.UDP
+			if b.UDP.Address.Family().IsDomain() {
+				errors.LogError(context.Background(), "impossible domain packet ", b.UDP, " reply via original target ", dst)
+			} else {
+				dst = *b.UDP
+			}
 		}
 		err := c.writeFunc(b.Bytes(), dst, c.src)
 		if err != nil {
@@ -368,11 +306,11 @@ func (c *udpConn) Close() error {
 }
 
 func (c *udpConn) LocalAddr() net.Addr {
-	return c.src.RawNetAddr() // fake
+	return c.dst.RawNetAddr()
 }
 
 func (c *udpConn) RemoteAddr() net.Addr {
-	return c.src.RawNetAddr() // src
+	return c.src.RawNetAddr()
 }
 
 func (c *udpConn) SetDeadline(t time.Time) error {

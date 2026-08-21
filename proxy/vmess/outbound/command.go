@@ -1,7 +1,6 @@
 package outbound
 
 import (
-
 	"github.com/GFW-knocker/Xray-core/common/net"
 	"github.com/GFW-knocker/Xray-core/common/protocol"
 )
