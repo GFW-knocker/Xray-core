@@ -11,6 +11,9 @@ enum SecurityType {
   AUTO = 2;
   AES128_GCM = 3;
   CHACHA20_POLY1305 = 4;
+  // GFW-knocker: upstream dropped NONE; the revived QUIC transport uses it to mean
+  // "no AEAD". Number 6 (ZERO) is intentionally left unused.
+  NONE = 5;
 }
 
 message SecurityConfig {

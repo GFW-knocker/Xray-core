@@ -28,6 +28,9 @@ const (
 	SecurityType_AUTO              SecurityType = 2
 	SecurityType_AES128_GCM        SecurityType = 3
 	SecurityType_CHACHA20_POLY1305 SecurityType = 4
+	// GFW-knocker: upstream dropped NONE; the revived QUIC transport uses it to mean
+	// "no AEAD". Number 6 (ZERO) is intentionally left unused.
+	SecurityType_NONE SecurityType = 5
 )
 
 // Enum value maps for SecurityType.
@@ -37,12 +40,14 @@ var (
 		2: "AUTO",
 		3: "AES128_GCM",
 		4: "CHACHA20_POLY1305",
+		5: "NONE",
 	}
 	SecurityType_value = map[string]int32{
 		"UNKNOWN":           0,
 		"AUTO":              2,
 		"AES128_GCM":        3,
 		"CHACHA20_POLY1305": 4,
+		"NONE":              5,
 	}
 )
 
@@ -123,13 +128,14 @@ const file_common_protocol_headers_proto_rawDesc = "" +
 	"\n" +
 	"\x1dcommon/protocol/headers.proto\x12\x14xray.common.protocol\"H\n" +
 	"\x0eSecurityConfig\x126\n" +
-	"\x04type\x18\x01 \x01(\x0e2\".xray.common.protocol.SecurityTypeR\x04type*L\n" +
+	"\x04type\x18\x01 \x01(\x0e2\".xray.common.protocol.SecurityTypeR\x04type*V\n" +
 	"\fSecurityType\x12\v\n" +
 	"\aUNKNOWN\x10\x00\x12\b\n" +
 	"\x04AUTO\x10\x02\x12\x0e\n" +
 	"\n" +
 	"AES128_GCM\x10\x03\x12\x15\n" +
-	"\x11CHACHA20_POLY1305\x10\x04Be\n" +
+	"\x11CHACHA20_POLY1305\x10\x04\x12\b\n" +
+	"\x04NONE\x10\x05Be\n" +
 	"\x18com.xray.common.protocolP\x01Z0github.com/GFW-knocker/Xray-core/common/protocol\xaa\x02\x14Xray.Common.Protocolb\x06proto3"
 
 var (
