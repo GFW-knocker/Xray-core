@@ -153,7 +153,9 @@ func (c *sysConn) SyscallConn() (syscall.RawConn, error) {
 }
 
 type interConn struct {
-	stream quic.Stream
+	// GFW-knocker: quic.Stream is a struct containing a sync.Mutex, so it must be
+	// held by pointer -- copying it would duplicate the lock.
+	stream *quic.Stream
 	local  net.Addr
 	remote net.Addr
 }

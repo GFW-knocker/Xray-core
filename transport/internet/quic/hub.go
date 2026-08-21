@@ -22,7 +22,7 @@ type Listener struct {
 	addConn  internet.ConnHandler
 }
 
-func (l *Listener) acceptStreams(conn quic.Conn) {
+func (l *Listener) acceptStreams(conn *quic.Conn) {
 	for {
 		stream, err := conn.AcceptStream(context.Background())
 		if err != nil {
@@ -42,7 +42,7 @@ func (l *Listener) acceptStreams(conn quic.Conn) {
 		}
 
 		conn := &interConn{
-			stream: *stream,
+			stream: stream,
 			local:  conn.LocalAddr(),
 			remote: conn.RemoteAddr(),
 		}
@@ -62,7 +62,7 @@ func (l *Listener) keepAccepting() {
 			time.Sleep(time.Second)
 			continue
 		}
-		go l.acceptStreams(*conn)
+		go l.acceptStreams(conn)
 	}
 }
 
