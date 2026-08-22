@@ -27,7 +27,7 @@ func (a *Account) AsAccount() (protocol.Account, error) {
 	}, nil
 }
 
-// MemoryAccount is an in-memory form of VLess account.
+// MemoryAccount is an in-memory form of MVLess account.
 type MemoryAccount struct {
 	// ID of the account.
 	ID *protocol.ID
@@ -47,11 +47,11 @@ type MemoryAccount struct {
 
 // Equals implements protocol.Account.Equals().
 func (a *MemoryAccount) Equals(account protocol.Account) bool {
-	vlessAccount, ok := account.(*MemoryAccount)
+	mvlessAccount, ok := account.(*MemoryAccount)
 	if !ok {
 		return false
 	}
-	return a.ID.Equals(vlessAccount.ID)
+	return a.ID.Equals(mvlessAccount.ID)
 }
 
 func (a *MemoryAccount) ToProto() proto.Message {

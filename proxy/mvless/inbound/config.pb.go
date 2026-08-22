@@ -108,7 +108,7 @@ func (x *Fallback) GetXver() uint64 {
 
 type Config struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Clients       []*protocol.User       `protobuf:"bytes,1,rep,name=clients,proto3" json:"clients,omitempty"`
+	Users         []*protocol.User       `protobuf:"bytes,1,rep,name=users,proto3" json:"users,omitempty"`
 	Fallbacks     []*Fallback            `protobuf:"bytes,2,rep,name=fallbacks,proto3" json:"fallbacks,omitempty"`
 	Decryption    string                 `protobuf:"bytes,3,opt,name=decryption,proto3" json:"decryption,omitempty"`
 	XorMode       uint32                 `protobuf:"varint,4,opt,name=xorMode,proto3" json:"xorMode,omitempty"`
@@ -149,9 +149,9 @@ func (*Config) Descriptor() ([]byte, []int) {
 	return file_proxy_mvless_inbound_config_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *Config) GetClients() []*protocol.User {
+func (x *Config) GetUsers() []*protocol.User {
 	if x != nil {
-		return x.Clients
+		return x.Users
 	}
 	return nil
 }
@@ -209,9 +209,9 @@ const file_proxy_mvless_inbound_config_proto_rawDesc = "" +
 	"\x04path\x18\x03 \x01(\tR\x04path\x12\x12\n" +
 	"\x04type\x18\x04 \x01(\tR\x04type\x12\x12\n" +
 	"\x04dest\x18\x05 \x01(\tR\x04dest\x12\x12\n" +
-	"\x04xver\x18\x06 \x01(\x04R\x04xver\"\x97\x02\n" +
-	"\x06Config\x124\n" +
-	"\aclients\x18\x01 \x03(\v2\x1a.xray.common.protocol.UserR\aclients\x12A\n" +
+	"\x04xver\x18\x06 \x01(\x04R\x04xver\"\x93\x02\n" +
+	"\x06Config\x120\n" +
+	"\x05users\x18\x01 \x03(\v2\x1a.xray.common.protocol.UserR\x05users\x12A\n" +
 	"\tfallbacks\x18\x02 \x03(\v2#.xray.proxy.mvless.inbound.FallbackR\tfallbacks\x12\x1e\n" +
 	"\n" +
 	"decryption\x18\x03 \x01(\tR\n" +
@@ -242,7 +242,7 @@ var file_proxy_mvless_inbound_config_proto_goTypes = []any{
 	(*protocol.User)(nil), // 2: xray.common.protocol.User
 }
 var file_proxy_mvless_inbound_config_proto_depIdxs = []int32{
-	2, // 0: xray.proxy.mvless.inbound.Config.clients:type_name -> xray.common.protocol.User
+	2, // 0: xray.proxy.mvless.inbound.Config.users:type_name -> xray.common.protocol.User
 	0, // 1: xray.proxy.mvless.inbound.Config.fallbacks:type_name -> xray.proxy.mvless.inbound.Fallback
 	2, // [2:2] is the sub-list for method output_type
 	2, // [2:2] is the sub-list for method input_type

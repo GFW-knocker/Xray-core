@@ -11,6 +11,7 @@ import (
 	"time"
 	"unsafe"
 
+	proxymanConfig "github.com/GFW-knocker/Xray-core/app/proxyman"
 	proxyman "github.com/GFW-knocker/Xray-core/app/proxyman/outbound"
 	"github.com/GFW-knocker/Xray-core/app/reverse"
 	"github.com/GFW-knocker/Xray-core/common"
@@ -47,7 +48,7 @@ func init() {
 	}))
 }
 
-// Handler is an outbound connection handler for VLess protocol.
+// Handler is an outbound connection handler for MVLess protocol.
 type Handler struct {
 	server        *protocol.ServerSpec
 	policyManager policy.Manager
@@ -65,7 +66,7 @@ type ConnExpire struct {
 	Expire time.Time
 }
 
-// New creates a new VLess outbound handler.
+// New creates a new MVLess outbound handler.
 func New(ctx context.Context, config *Config) (*Handler, error) {
 	if config.Vnext == nil {
 		return nil, errors.New(`no vnext found`)
@@ -97,14 +98,25 @@ func New(ctx context.Context, config *Config) (*Handler, error) {
 	}
 
 	if a.Reverse != nil {
+		rvsCtx := session.ContextWithInbound(ctx, &session.Inbound{
+			Tag:  a.Reverse.Tag,
+			Name: "mvless-reverse",
+			User: handler.server.User, // TODO: email
+		})
+		if sc := a.Reverse.Sniffing; sc != nil && sc.Enabled {
+			request, err := proxymanConfig.BuildSniffingRequest(sc)
+			if err != nil {
+				return nil, errors.New("failed to build reverse sniffing request").Base(err).AtError()
+			}
+			rvsCtx = session.ContextWithContent(rvsCtx, &session.Content{
+				SniffingRequest: request,
+			})
+		}
 		handler.reverse = &Reverse{
 			tag:        a.Reverse.Tag,
 			dispatcher: v.GetFeature(routing.DispatcherType()).(routing.Dispatcher),
-			ctx: session.ContextWithInbound(ctx, &session.Inbound{
-				Tag:  a.Reverse.Tag,
-				User: handler.server.User, // TODO: email
-			}),
-			handler: handler,
+			ctx:        rvsCtx,
+			handler:    handler,
 		}
 		handler.reverse.monitorTask = &task.Periodic{
 			Execute:  handler.reverse.monitor,
@@ -139,7 +151,7 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
 	if !ob.Target.IsValid() && ob.Target.Address.String() != "v1.rvs.cool" {
 		return errors.New("target not specified").AtError()
 	}
-	ob.Name = "vless"
+	ob.Name = "mvless"
 
 	rec := h.server
 	var conn stat.Connection
@@ -276,7 +288,7 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
 			input = (*bytes.Reader)(unsafe.Pointer(p + i.Offset))
 			rawInput = (*bytes.Buffer)(unsafe.Pointer(p + r.Offset))
 		default:
-			panic("unknown VLESS request command")
+			panic("unknown MVLESS request command")
 		}
 	default:
 		ob.CanSpliceCopy = 3
@@ -330,13 +342,13 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
 				return err1
 			} else if requestAddons.Flow == mvless.XRV {
 				mb := make(buf.MultiBuffer, 1)
-				errors.LogInfo(ctx, "Insert padding with empty content to camouflage VLESS header ", mb.Len())
+				errors.LogInfo(ctx, "Insert padding with empty content to camouflage MVLESS header ", mb.Len())
 				if err := serverWriter.WriteMultiBuffer(mb); err != nil {
 					return err // ...
 				}
 			}
 		} else {
-			errors.LogDebug(ctx, "Reader is not timeout reader, will send out vless header separately from first payload")
+			errors.LogDebug(ctx, "Reader is not timeout reader, will send out mvless header separately from first payload")
 		}
 		// Flush; bufferWriter.WriteMultiBuffer now is bufferWriter.writer.WriteMultiBuffer
 		if err := bufferWriter.SetBuffered(false); err != nil {

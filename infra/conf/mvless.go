@@ -13,6 +13,7 @@ import (
 	"github.com/GFW-knocker/Xray-core/common/net"
 	"github.com/GFW-knocker/Xray-core/common/protocol"
 	"github.com/GFW-knocker/Xray-core/common/serial"
+	"github.com/GFW-knocker/Xray-core/common/task"
 	"github.com/GFW-knocker/Xray-core/common/uuid"
 	"github.com/GFW-knocker/Xray-core/proxy/mvless"
 	"github.com/GFW-knocker/Xray-core/proxy/mvless/inbound"
@@ -30,35 +31,41 @@ type MVLessInboundFallback struct {
 }
 
 type MVLessInboundConfig struct {
-	Clients    []json.RawMessage       `json:"clients"`
-	Decryption string                  `json:"decryption"`
-	Fallbacks  []*VLessInboundFallback `json:"fallbacks"`
-	Flow       string                  `json:"flow"`
-	Testseed   []uint32                `json:"testseed"`
+	Users      []json.RawMessage        `json:"users"`
+	Clients    []json.RawMessage        `json:"clients"`
+	Decryption string                   `json:"decryption"`
+	Fallbacks  []*MVLessInboundFallback `json:"fallbacks"`
+	Flow       string                   `json:"flow"`
+	Testseed   []uint32                 `json:"testseed"`
 }
 
 // Build implements Buildable
 func (c *MVLessInboundConfig) Build() (proto.Message, error) {
 	config := new(inbound.Config)
-	config.Clients = make([]*protocol.User, len(c.Clients))
-	switch c.Flow {
-	case "", mvless.XRV:
-	default:
-		return nil, errors.New(`VLESS "settings.flow" doesn't support "` + c.Flow + `" in this version`)
+
+	if c.Clients != nil {
+		c.Users = c.Clients
 	}
-	for idx, rawUser := range c.Clients {
+	config.Users = make([]*protocol.User, len(c.Users))
+	switch c.Flow {
+	case mvless.XRV, "":
+	default:
+		return nil, errors.New(`MVLESS "settings.flow" doesn't support "` + c.Flow + `" in this version`)
+	}
+	processClient := func(idx int) error {
+		rawUser := c.Users[idx]
 		user := new(protocol.User)
 		if err := json.Unmarshal(rawUser, user); err != nil {
-			return nil, errors.New(`VLESS clients: invalid user`).Base(err)
+			return errors.New(`MVLESS users: invalid user`).Base(err)
 		}
 		account := new(mvless.Account)
 		if err := json.Unmarshal(rawUser, account); err != nil {
-			return nil, errors.New(`VLESS clients: invalid user`).Base(err)
+			return errors.New(`MVLESS users: invalid user`).Base(err)
 		}
 
 		u, err := uuid.ParseString(account.Id)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		account.Id = u.String()
 
@@ -67,10 +74,7 @@ func (c *MVLessInboundConfig) Build() (proto.Message, error) {
 			account.Flow = c.Flow
 		case mvless.XRV:
 		default:
-			return nil, errors.New(`VLESS clients: "flow" doesn't support "` + account.Flow + `" in this version`)
-		}
-		if account.Flow == "" {
-			errors.PrintNonRemovalDeprecatedFeatureWarning("MVLESS (with no Flow, etc.)", "VLESS with Flow & Seed")
+			return errors.New(`MVLESS users: "flow" doesn't support "` + account.Flow + `" in this version`)
 		}
 
 		if len(account.Testseed) < 4 {
@@ -78,15 +82,25 @@ func (c *MVLessInboundConfig) Build() (proto.Message, error) {
 		}
 
 		if account.Encryption != "" {
-			return nil, errors.New(`MVLESS clients: "encryption" should not in inbound settings`)
+			return errors.New(`MVLESS users: "encryption" should not be in inbound settings`)
 		}
 
-		if account.Reverse != nil && account.Reverse.Tag == "" {
-			return nil, errors.New(`MVLESS clients: "tag" can't be empty for "reverse"`)
+		if account.Reverse != nil {
+			if account.Reverse.Tag == "" {
+				return errors.New(`MVLESS users: "tag" can't be empty for "reverse"`)
+			}
+			if account.Reverse.Sniffing != nil { // may not be reached: error json unmarshal
+				return errors.New(`MVLESS users: inbound's "reverse" can't have "sniffing"`)
+			}
 		}
 
 		user.Account = serial.ToTypedMessage(account)
-		config.Clients[idx] = user
+		config.Users[idx] = user
+		return nil
+	}
+
+	if err := task.ParallelForN(len(c.Users), processClient); err != nil {
+		return nil, err
 	}
 
 	config.Decryption = c.Decryption
@@ -135,13 +149,13 @@ func (c *MVLessInboundConfig) Build() (proto.Message, error) {
 		return true
 	}() && config.Decryption != "none" {
 		if config.Decryption == "" {
-			return nil, errors.New(`VLESS settings: please add/set "decryption":"none" to every settings`)
+			return nil, errors.New(`MVLESS settings: please add/set "decryption":"none" to every settings`)
 		}
-		return nil, errors.New(`VLESS settings: unsupported "decryption": ` + config.Decryption)
+		return nil, errors.New(`MVLESS settings: unsupported "decryption": ` + config.Decryption)
 	}
 
 	if config.Decryption != "none" && c.Fallbacks != nil {
-		return nil, errors.New(`VLESS settings: "fallbacks" can not be used together with "decryption"`)
+		return nil, errors.New(`MVLESS settings: "fallbacks" can not be used together with "decryption"`)
 	}
 
 	for _, fb := range c.Fallbacks {
@@ -164,11 +178,11 @@ func (c *MVLessInboundConfig) Build() (proto.Message, error) {
 	for _, fb := range config.Fallbacks {
 		/*
 			if fb.Alpn == "h2" && fb.Path != "" {
-				return nil, errors.New(`VLESS fallbacks: "alpn":"h2" doesn't support "path"`)
+				return nil, errors.New(`MVLESS fallbacks: "alpn":"h2" doesn't support "path"`)
 			}
 		*/
 		if fb.Path != "" && fb.Path[0] != '/' {
-			return nil, errors.New(`VLESS fallbacks: "path" must be empty or start with "/"`)
+			return nil, errors.New(`MVLESS fallbacks: "path" must be empty or start with "/"`)
 		}
 		if fb.Type == "" && fb.Dest != "" {
 			if fb.Dest == "serve-ws-none" {
@@ -190,14 +204,36 @@ func (c *MVLessInboundConfig) Build() (proto.Message, error) {
 			}
 		}
 		if fb.Type == "" {
-			return nil, errors.New(`VLESS fallbacks: please fill in a valid value for every "dest"`)
+			return nil, errors.New(`MVLESS fallbacks: please fill in a valid value for every "dest"`)
 		}
 		if fb.Xver > 2 {
-			return nil, errors.New(`VLESS fallbacks: invalid PROXY protocol version, "xver" only accepts 0, 1, 2`)
+			return nil, errors.New(`MVLESS fallbacks: invalid PROXY protocol version, "xver" only accepts 0, 1, 2`)
 		}
 	}
 
 	return config, nil
+}
+
+type MVLessReverseConfig struct {
+	Tag      string          `json:"tag"`
+	Sniffing *SniffingConfig `json:"sniffing"`
+}
+
+func (c *MVLessReverseConfig) Build() (*mvless.Reverse, error) {
+	if c.Tag == "" {
+		return nil, errors.New(`MVLESS reverse: "tag" can't be empty`)
+	}
+	r := &mvless.Reverse{
+		Tag: c.Tag,
+	}
+	if c.Sniffing != nil {
+		sc, err := c.Sniffing.Build()
+		if err != nil {
+			return nil, errors.New(`MVLESS reverse: invalid "sniffing" config`).Base(err)
+		}
+		r.Sniffing = sc
+	}
+	return r, nil
 }
 
 type MVLessOutboundVnext struct {
@@ -207,25 +243,25 @@ type MVLessOutboundVnext struct {
 }
 
 type MVLessOutboundConfig struct {
-	Address    *Address              `json:"address"`
-	Port       uint16                `json:"port"`
-	Level      uint32                `json:"level"`
-	Email      string                `json:"email"`
-	Id         string                `json:"id"`
-	Flow       string                `json:"flow"`
-	Seed       string                `json:"seed"`
-	Encryption string                `json:"encryption"`
-	Reverse    *mvless.Reverse       `json:"reverse"`
-	Testpre    uint32                `json:"testpre"`
-	Testseed   []uint32              `json:"testseed"`
-	Vnext      []*VLessOutboundVnext `json:"vnext"`
+	Address    *Address               `json:"address"`
+	Port       uint16                 `json:"port"`
+	Level      uint32                 `json:"level"`
+	Email      string                 `json:"email"`
+	Id         string                 `json:"id"`
+	Flow       string                 `json:"flow"`
+	Seed       string                 `json:"seed"`
+	Encryption string                 `json:"encryption"`
+	Reverse    *MVLessReverseConfig   `json:"reverse"`
+	Testpre    uint32                 `json:"testpre"`
+	Testseed   []uint32               `json:"testseed"`
+	Vnext      []*MVLessOutboundVnext `json:"vnext"`
 }
 
 // Build implements Buildable
 func (c *MVLessOutboundConfig) Build() (proto.Message, error) {
 	config := new(outbound.Config)
 	if c.Address != nil {
-		c.Vnext = []*VLessOutboundVnext{
+		c.Vnext = []*MVLessOutboundVnext{
 			{
 				Address: c.Address,
 				Port:    c.Port,
@@ -234,15 +270,14 @@ func (c *MVLessOutboundConfig) Build() (proto.Message, error) {
 		}
 	}
 	if len(c.Vnext) != 1 {
-		return nil, errors.New(`MVLESS settings: "vnext" should have one and only one member. Multiple endpoints in "vnext" should use multiple VLESS outbounds and routing balancer instead`)
+		return nil, errors.New(`MVLESS settings: "vnext" should have one and only one member. Multiple endpoints in "vnext" should use multiple MVLESS outbounds and routing balancer instead`)
 	}
-
 	for _, rec := range c.Vnext {
 		if rec.Address == nil {
-			return nil, errors.New(`VLESS vnext: "address" is not set`)
+			return nil, errors.New(`MVLESS vnext: "address" is not set`)
 		}
 		if len(rec.Users) != 1 {
-			return nil, errors.New(`VLESS vnext: "users" should have one and only one member. Multiple members in "users" should use multiple VLESS outbounds and routing balancer instead`)
+			return nil, errors.New(`MVLESS vnext: "users" should have one and only one member. Multiple members in "users" should use multiple MVLESS outbounds and routing balancer instead`)
 		}
 		spec := &protocol.ServerEndpoint{
 			Address: rec.Address.Build(),
@@ -264,12 +299,21 @@ func (c *MVLessOutboundConfig) Build() (proto.Message, error) {
 				account.Flow = c.Flow
 				//account.Seed = c.Seed
 				account.Encryption = c.Encryption
-				account.Reverse = c.Reverse
+				if c.Reverse != nil {
+					rvs, err := c.Reverse.Build()
+					if err != nil {
+						return nil, err
+					}
+					account.Reverse = rvs
+				}
 				account.Testpre = c.Testpre
 				account.Testseed = c.Testseed
 			} else {
 				if err := json.Unmarshal(rawUser, account); err != nil {
-					return nil, errors.New(`VLESS users: invalid user`).Base(err)
+					return nil, errors.New(`MVLESS users: invalid user`).Base(err)
+				}
+				if account.Reverse != nil { // may not be reached: error json unmarshal
+					return nil, errors.New(`MVLESS users: please use simplified outbound's config style to use "reverse"`)
 				}
 			}
 
@@ -281,10 +325,9 @@ func (c *MVLessOutboundConfig) Build() (proto.Message, error) {
 
 			switch account.Flow {
 			case "":
-				errors.PrintNonRemovalDeprecatedFeatureWarning("VLESS (with no Flow, etc.)", "VLESS with Flow & Seed")
 			case mvless.XRV, mvless.XRV + "-udp443":
 			default:
-				return nil, errors.New(`VLESS users: "flow" doesn't support "` + account.Flow + `" in this version`)
+				return nil, errors.New(`MVLESS users: "flow" doesn't support "` + account.Flow + `" in this version`)
 			}
 
 			if !func() bool {
@@ -329,10 +372,6 @@ func (c *MVLessOutboundConfig) Build() (proto.Message, error) {
 					return nil, errors.New(`MVLESS users: please add/set "encryption":"none" for every user`)
 				}
 				return nil, errors.New(`MVLESS users: unsupported "encryption": ` + account.Encryption)
-			}
-
-			if account.Reverse != nil && account.Reverse.Tag == "" {
-				return nil, errors.New(`MVLESS clients: "tag" can't be empty for "reverse"`)
 			}
 
 			user.Account = serial.ToTypedMessage(account)

@@ -71,6 +71,38 @@ jobs:
           go install -v mvdan.cc/gofumpt@latest
           go run ./infra/vformat/main.go -mode check -pwd ./
 
+  check-mvless:
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout codebase
+        uses: actions/checkout@v7
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          check-latest: true
+          cache: false
+      # core/config.pb.go's header is the single source of truth for the
+      # protobuf toolchain this repo generates with.
+      - name: Read protobuf toolchain versions
+        id: pbver
+        run: |
+          echo "gen=$(sed -n '3s|.*protoc-gen-go v||p' core/config.pb.go | tr -d '[:cntrl:]')" >> $GITHUB_OUTPUT
+          echo "protoc=$(sed -n '4s|.*protoc  *v5[.]||p' core/config.pb.go | tr -d '[:cntrl:]')" >> $GITHUB_OUTPUT
+      - name: Set up protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          version: ${{ steps.pbver.outputs.protoc }}
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install protoc-gen-go
+        run: go install google.golang.org/protobuf/cmd/protoc-gen-go@v${{ steps.pbver.outputs.gen }}
+      # MVLESS must stay a pure rename of VLESS plus the version byte.
+      - name: Check MVLESS is in sync with VLESS
+        run: bash infra/mvlessgen/verify-mvless.sh
+
   test:
     needs: check-assets
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name

@@ -24,6 +24,7 @@ import (
 	"github.com/GFW-knocker/Xray-core/common/signal"
 	"github.com/GFW-knocker/Xray-core/features/routing"
 	"github.com/GFW-knocker/Xray-core/features/stats"
+	mvencryption "github.com/GFW-knocker/Xray-core/proxy/mvless/encryption"
 	"github.com/GFW-knocker/Xray-core/proxy/vless/encryption"
 	"github.com/GFW-knocker/Xray-core/transport"
 	"github.com/GFW-knocker/Xray-core/transport/internet"
@@ -678,7 +679,14 @@ func UnwrapRawConn(conn net.Conn) (net.Conn, stats.Counter, stats.Counter) {
 			conn = commonConn.Conn
 			isEncryption = true
 		}
+		if commonConn, ok := conn.(*mvencryption.CommonConn); ok {
+			conn = commonConn.Conn
+			isEncryption = true
+		}
 		if xorConn, ok := conn.(*encryption.XorConn); ok {
+			return xorConn, nil, nil // full-random xorConn should not be penetrated
+		}
+		if xorConn, ok := conn.(*mvencryption.XorConn); ok {
 			return xorConn, nil, nil // full-random xorConn should not be penetrated
 		}
 		if statConn, ok := conn.(*stat.CounterConnection); ok {

@@ -15,6 +15,7 @@ import (
 	"github.com/GFW-knocker/Xray-core/proxy/shadowsocks"
 	"github.com/GFW-knocker/Xray-core/proxy/shadowsocks_2022"
 	"github.com/GFW-knocker/Xray-core/proxy/trojan"
+	mvlessin "github.com/GFW-knocker/Xray-core/proxy/mvless/inbound"
 	vlessin "github.com/GFW-knocker/Xray-core/proxy/vless/inbound"
 	vmessin "github.com/GFW-knocker/Xray-core/proxy/vmess/inbound"
 
@@ -81,6 +82,8 @@ func extractInboundUsers(inb *core.InboundHandlerConfig) []*protocol.User {
 	case *vmessin.Config:
 		return ty.User
 	case *vlessin.Config:
+		return ty.Users
+	case *mvlessin.Config:
 		return ty.Users
 	case *trojan.ServerConfig:
 		return ty.Users

@@ -24,14 +24,14 @@ func ProcessUUID(id [16]byte) [16]byte {
 	return id
 }
 
-// MemoryValidator stores valid VLESS users.
+// MemoryValidator stores valid MVLESS users.
 type MemoryValidator struct {
 	// Considering email's usage here, map + sync.Mutex/RWMutex may have better performance.
 	email sync.Map
 	users sync.Map
 }
 
-// Add a VLESS user, Email must be empty or unique.
+// Add a MVLESS user, Email must be empty or unique.
 func (v *MemoryValidator) Add(u *protocol.MemoryUser) error {
 	if u.Email != "" {
 		_, loaded := v.email.LoadOrStore(strings.ToLower(u.Email), u)
@@ -43,7 +43,7 @@ func (v *MemoryValidator) Add(u *protocol.MemoryUser) error {
 	return nil
 }
 
-// Del a VLESS user with a non-empty Email.
+// Del a MVLESS user with a non-empty Email.
 func (v *MemoryValidator) Del(e string) error {
 	if e == "" {
 		return errors.New("Email must not be empty.")
@@ -58,7 +58,7 @@ func (v *MemoryValidator) Del(e string) error {
 	return nil
 }
 
-// Get a VLESS user with UUID, nil if user doesn't exist.
+// Get a MVLESS user with UUID, nil if user doesn't exist.
 func (v *MemoryValidator) Get(id uuid.UUID) *protocol.MemoryUser {
 	u, _ := v.users.Load(ProcessUUID(id))
 	if u != nil {
@@ -67,7 +67,7 @@ func (v *MemoryValidator) Get(id uuid.UUID) *protocol.MemoryUser {
 	return nil
 }
 
-// Get a VLESS user with email, nil if user doesn't exist.
+// Get a MVLESS user with email, nil if user doesn't exist.
 func (v *MemoryValidator) GetByEmail(email string) *protocol.MemoryUser {
 	email = strings.ToLower(email)
 	u, _ := v.email.Load(email)
@@ -79,7 +79,7 @@ func (v *MemoryValidator) GetByEmail(email string) *protocol.MemoryUser {
 
 // Get all users
 func (v *MemoryValidator) GetAll() []*protocol.MemoryUser {
-	var u = make([]*protocol.MemoryUser, 0, 100)
+	u := make([]*protocol.MemoryUser, 0, 100)
 	v.email.Range(func(key, value interface{}) bool {
 		u = append(u, value.(*protocol.MemoryUser))
 		return true

@@ -27,7 +27,9 @@ import (
 	"github.com/GFW-knocker/Xray-core/common/signal"
 	"github.com/GFW-knocker/Xray-core/common/task"
 	"github.com/GFW-knocker/Xray-core/core"
+	"github.com/GFW-knocker/Xray-core/features"
 	"github.com/GFW-knocker/Xray-core/features/dns"
+	"github.com/GFW-knocker/Xray-core/features/extension"
 	feature_inbound "github.com/GFW-knocker/Xray-core/features/inbound"
 	"github.com/GFW-knocker/Xray-core/features/outbound"
 	"github.com/GFW-knocker/Xray-core/features/policy"
@@ -56,7 +58,7 @@ func init() {
 		c := config.(*Config)
 
 		validator := new(mvless.MemoryValidator)
-		for _, user := range c.Clients {
+		for _, user := range c.Users {
 			u, err := user.ToMemoryUser()
 			if err != nil {
 				return nil, errors.New("failed to get MVLESS user").Base(err).AtError()
@@ -78,13 +80,14 @@ type Handler struct {
 	validator              mvless.Validator
 	decryption             *encryption.ServerInstance
 	outboundHandlerManager outbound.Manager
+	observer               features.Feature
 	defaultDispatcher      routing.Dispatcher
 	ctx                    context.Context
 	fallbacks              map[string]map[string]map[string]*Fallback // or nil
 	// regexps               map[string]*regexp.Regexp       // or nil
 }
 
-// New creates a new VLess inbound handler.
+// New creates a new MVLess inbound handler.
 func New(ctx context.Context, config *Config, dc dns.Client, validator mvless.Validator) (*Handler, error) {
 	v := core.MustFromContext(ctx)
 	handler := &Handler{
@@ -93,6 +96,7 @@ func New(ctx context.Context, config *Config, dc dns.Client, validator mvless.Va
 		stats:                  v.GetFeature(stats.ManagerType()).(stats.Manager),
 		validator:              validator,
 		outboundHandlerManager: v.GetFeature(outbound.ManagerType()).(outbound.Manager),
+		observer:               v.GetFeature(extension.ObservatoryType()),
 		defaultDispatcher:      v.GetFeature(routing.DispatcherType()).(routing.Dispatcher),
 		ctx:                    ctx,
 	}
@@ -529,7 +533,7 @@ func (h *Handler) Process(ctx context.Context, network net.Network, connection s
 	if inbound == nil {
 		panic("no inbound metadata")
 	}
-	inbound.Name = "vless"
+	inbound.Name = "mvless"
 	inbound.User = request.User
 	inbound.VlessRoute = net.PortFromBytes(userSentID[6:8])
 
@@ -623,12 +627,14 @@ func (h *Handler) Process(ctx context.Context, network net.Network, connection s
 		if err != nil {
 			return err
 		}
-		return r.NewMux(ctx, dispatcher.WrapLink(ctx, h.policyManager, h.stats, &transport.Link{Reader: clientReader, Writer: clientWriter}))
+		return r.NewMux(ctx, dispatcher.WrapLink(ctx, h.policyManager, h.stats, &transport.Link{Reader: clientReader, Writer: clientWriter}), h.observer)
 	}
 
-	if err := dispatch.DispatchLink(ctx, request.Destination(), &transport.Link{
-		Reader: clientReader,
-		Writer: clientWriter},
+	if err := dispatch.DispatchLink(
+		ctx, request.Destination(), &transport.Link{
+			Reader: clientReader,
+			Writer: clientWriter,
+		},
 	); err != nil {
 		return errors.New("failed to dispatch request").Base(err)
 	}
@@ -645,7 +651,7 @@ func (r *Reverse) Tag() string {
 	return r.tag
 }
 
-func (r *Reverse) NewMux(ctx context.Context, link *transport.Link) error {
+func (r *Reverse) NewMux(ctx context.Context, link *transport.Link, observer features.Feature) error {
 	muxClient, err := mux.NewClientWorker(*link, mux.ClientStrategy{})
 	if err != nil {
 		return errors.New("failed to create mux client worker").Base(err).AtWarning()
@@ -655,6 +661,9 @@ func (r *Reverse) NewMux(ctx context.Context, link *transport.Link) error {
 		return errors.New("failed to create portal worker").Base(err).AtWarning()
 	}
 	r.picker.AddWorker(worker)
+	if burstObs, ok := observer.(extension.BurstObservatory); ok {
+		go burstObs.Check([]string{r.Tag()})
+	}
 	select {
 	case <-ctx.Done():
 	case <-muxClient.WaitClosed():

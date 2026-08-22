@@ -7,6 +7,7 @@
 package mvless
 
 import (
+	proxyman "github.com/GFW-knocker/Xray-core/app/proxyman"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -22,8 +23,9 @@ const (
 )
 
 type Reverse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Tag           string                 `protobuf:"bytes,1,opt,name=tag,proto3" json:"tag,omitempty"`
+	state         protoimpl.MessageState   `protogen:"open.v1"`
+	Tag           string                   `protobuf:"bytes,1,opt,name=tag,proto3" json:"tag,omitempty"`
+	Sniffing      *proxyman.SniffingConfig `protobuf:"bytes,2,opt,name=sniffing,proto3" json:"sniffing,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -63,6 +65,13 @@ func (x *Reverse) GetTag() string {
 		return x.Tag
 	}
 	return ""
+}
+
+func (x *Reverse) GetSniffing() *proxyman.SniffingConfig {
+	if x != nil {
+		return x.Sniffing
+	}
+	return nil
 }
 
 type Account struct {
@@ -179,9 +188,10 @@ var File_proxy_mvless_account_proto protoreflect.FileDescriptor
 
 const file_proxy_mvless_account_proto_rawDesc = "" +
 	"\n" +
-	"\x1aproxy/mvless/account.proto\x12\x11xray.proxy.mvless\"\x1b\n" +
+	"\x1aproxy/mvless/account.proto\x12\x11xray.proxy.mvless\x1a\x19app/proxyman/config.proto\"Z\n" +
 	"\aReverse\x12\x10\n" +
-	"\x03tag\x18\x01 \x01(\tR\x03tag\"\x87\x02\n" +
+	"\x03tag\x18\x01 \x01(\tR\x03tag\x12=\n" +
+	"\bsniffing\x18\x02 \x01(\v2!.xray.app.proxyman.SniffingConfigR\bsniffing\"\x87\x02\n" +
 	"\aAccount\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04flow\x18\x02 \x01(\tR\x04flow\x12\x1e\n" +
@@ -210,16 +220,18 @@ func file_proxy_mvless_account_proto_rawDescGZIP() []byte {
 
 var file_proxy_mvless_account_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_proxy_mvless_account_proto_goTypes = []any{
-	(*Reverse)(nil), // 0: xray.proxy.mvless.Reverse
-	(*Account)(nil), // 1: xray.proxy.mvless.Account
+	(*Reverse)(nil),                 // 0: xray.proxy.mvless.Reverse
+	(*Account)(nil),                 // 1: xray.proxy.mvless.Account
+	(*proxyman.SniffingConfig)(nil), // 2: xray.app.proxyman.SniffingConfig
 }
 var file_proxy_mvless_account_proto_depIdxs = []int32{
-	0, // 0: xray.proxy.mvless.Account.reverse:type_name -> xray.proxy.mvless.Reverse
-	1, // [1:1] is the sub-list for method output_type
-	1, // [1:1] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	2, // 0: xray.proxy.mvless.Reverse.sniffing:type_name -> xray.app.proxyman.SniffingConfig
+	0, // 1: xray.proxy.mvless.Account.reverse:type_name -> xray.proxy.mvless.Reverse
+	2, // [2:2] is the sub-list for method output_type
+	2, // [2:2] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_proxy_mvless_account_proto_init() }

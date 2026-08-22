@@ -6,8 +6,11 @@ option go_package = "github.com/GFW-knocker/Xray-core/proxy/mvless";
 option java_package = "com.xray.proxy.mvless";
 option java_multiple_files = true;
 
+import "app/proxyman/config.proto";
+
 message Reverse {
   string tag = 1;
+  xray.app.proxyman.SniffingConfig sniffing = 2;
 }
 
 message Account {
@@ -15,7 +18,7 @@ message Account {
   string id = 1;
   // Flow settings. May be "xtls-rprx-vision".
   string flow = 2;
-  
+
   string encryption = 3;
   uint32 xorMode = 4;
   uint32 seconds = 5;
