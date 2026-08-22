@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/GFW-knocker/Xray-core/common/crypto"
-	dns2 "github.com/GFW-knocker/Xray-core/features/dns"
 	utls "github.com/refraction-networking/utls"
 	"golang.org/x/net/http2"
 
@@ -50,8 +49,16 @@ func ApplyECH(c *Config, config *tls.Config) error {
 	// for client
 	if len(c.EchConfigList) != 0 {
 		defer func() {
-			// GFW-knocker: fall back to a normal connection when no ECH config could be
-			// obtained, rather than forcing an invalid one to make the handshake fail.
+			// If no ECH config could be obtained, install a deliberately invalid one
+			// so the handshake fails instead of silently falling back to a plaintext
+			// SNI -- otherwise anyone able to block or strip the ECH DNS answer can
+			// downgrade the connection on demand.
+			//
+			// len(ECHConfig) == 0 covers both a failed query and a query that
+			// succeeded but carried no ECH record.
+			if len(ECHConfig) == 0 {
+				ECHConfig = []byte{1, 1, 4, 5, 1, 4}
+			}
 			config.EncryptedClientHelloConfigList = ECHConfig
 		}()
 		// query config from dns
@@ -308,9 +315,7 @@ func dnsQuery(server string, domain string, sockopt *internet.SocketConfig) ([]b
 			}
 		}
 	}
-	// GFW-knocker: an empty answer is valid -- it just means the domain has no ECH
-	// config, so report success and let the caller connect without ECH.
-	return nil, dns2.DefaultTTL, nil
+	return nil, 0, errors.New("no valid ECH config found in DNS response")
 }
 
 var ErrInvalidLen = errors.New("goech: invalid length")
