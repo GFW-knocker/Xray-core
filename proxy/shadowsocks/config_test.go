@@ -4,10 +4,10 @@ import (
 	"crypto/rand"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
 	"github.com/GFW-knocker/Xray-core/common"
 	"github.com/GFW-knocker/Xray-core/common/buf"
 	"github.com/GFW-knocker/Xray-core/proxy/shadowsocks"
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestAEADCipherUDP(t *testing.T) {

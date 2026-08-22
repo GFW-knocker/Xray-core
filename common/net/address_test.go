@@ -4,8 +4,8 @@ import (
 	"net"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
 	. "github.com/GFW-knocker/Xray-core/common/net"
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestAddressProperty(t *testing.T) {

@@ -11,7 +11,6 @@ import (
 	"time"
 	"unsafe"
 
-	utls "github.com/refraction-networking/utls"
 	proxymanConfig "github.com/GFW-knocker/Xray-core/app/proxyman"
 	proxyman "github.com/GFW-knocker/Xray-core/app/proxyman/outbound"
 	"github.com/GFW-knocker/Xray-core/app/reverse"
@@ -40,6 +39,7 @@ import (
 	"github.com/GFW-knocker/Xray-core/transport/internet/stat"
 	"github.com/GFW-knocker/Xray-core/transport/internet/tls"
 	"github.com/GFW-knocker/Xray-core/transport/pipe"
+	utls "github.com/refraction-networking/utls"
 )
 
 func init() {

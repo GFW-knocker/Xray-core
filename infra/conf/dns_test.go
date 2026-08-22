@@ -4,11 +4,11 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
 	"github.com/GFW-knocker/Xray-core/app/dns"
 	"github.com/GFW-knocker/Xray-core/common/geodata"
 	"github.com/GFW-knocker/Xray-core/common/net"
 	. "github.com/GFW-knocker/Xray-core/infra/conf"
+	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 )

@@ -24,8 +24,9 @@
 #                                 (used by verify-mvless.sh)
 #
 # Requirements: protoc and protoc-gen-go matching the versions the rest of the
-# repo's *.pb.go files were generated with, on PATH or via $PROTOC and
-# $PROTOC_GEN_GO.
+# repo's *.pb.go files were generated with (see core/config.pb.go's header), and
+# gofumpt at GOFUMPT_VERSION -- on PATH, or via $PROTOC, $PROTOC_GEN_GO and
+# $GOFUMPT.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -38,6 +39,17 @@ EXE=""
 [ "$(go env GOOS)" = "windows" ] && EXE=".exe"
 PROTOC="${PROTOC:-protoc$EXE}"
 PROTOC_GEN_GO="${PROTOC_GEN_GO:-$(go env GOPATH)/bin/protoc-gen-go$EXE}"
+
+# Keep in step with GOFUMPT_VERSION in .github/workflows/test.yml.
+GOFUMPT_VERSION="${GOFUMPT_VERSION:-v0.10.0}"
+if [ -z "${GOFUMPT:-}" ]; then
+	# Prefer GOPATH/bin, where `go install` puts it, then fall back to PATH.
+	if [ -x "$(go env GOPATH)/bin/gofumpt$EXE" ]; then
+		GOFUMPT="$(go env GOPATH)/bin/gofumpt$EXE"
+	else
+		GOFUMPT="gofumpt$EXE"
+	fi
+fi
 
 OUT=""
 while [ $# -gt 0 ]; do
@@ -177,10 +189,20 @@ while IFS= read -r pb; do
 done < <(find "$stage/proxy/mvless" -name '*.pb.go')
 rm -f "$stage/.pbref"
 
-echo "==> gofmt"
-gofmt -w "$stage/proxy/mvless"
+echo "==> gofumpt"
+# Must be the same formatter CI checks with (.github/workflows/test.yml,
+# check-format), and pinned to the same version, or the generator could emit
+# files that check-format rejects but nobody can fix: hand-formatting a
+# generated file would then break verify-mvless.
+if [ ! -x "$GOFUMPT" ] && ! command -v "$GOFUMPT" >/dev/null 2>&1; then
+	echo "sync-mvless: gofumpt not found (set \$GOFUMPT)" >&2
+	echo "  go install mvdan.cc/gofumpt@${GOFUMPT_VERSION}" >&2
+	exit 1
+fi
+# gofumpt always writes LF; match_eol below puts CRLF back where VLESS uses it.
+"$GOFUMPT" -w "$stage/proxy/mvless"
 for pair in "${PAIRS[@]}"; do
-	gofmt -w "$stage/${pair##*:}"
+	"$GOFUMPT" -w "$stage/${pair##*:}"
 done
 
 echo "==> matching line endings to the VLESS sources"

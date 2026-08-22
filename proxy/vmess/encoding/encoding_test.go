@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
 	"github.com/GFW-knocker/Xray-core/common"
 	"github.com/GFW-knocker/Xray-core/common/buf"
 	"github.com/GFW-knocker/Xray-core/common/net"
@@ -12,6 +11,7 @@ import (
 	"github.com/GFW-knocker/Xray-core/common/uuid"
 	"github.com/GFW-knocker/Xray-core/proxy/vmess"
 	. "github.com/GFW-knocker/Xray-core/proxy/vmess/encoding"
+	"github.com/google/go-cmp/cmp"
 )
 
 func toAccount(a *vmess.Account) protocol.Account {

@@ -4,11 +4,11 @@ import (
 	"context"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/GFW-knocker/Xray-core/app/stats"
 	. "github.com/GFW-knocker/Xray-core/app/stats/command"
 	"github.com/GFW-knocker/Xray-core/common"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
 func TestGetStats(t *testing.T) {

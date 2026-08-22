@@ -4,8 +4,6 @@ import (
 	"context"
 	"os"
 
-	M "github.com/sagernet/sing/common/metadata"
-	N "github.com/sagernet/sing/common/network"
 	"github.com/GFW-knocker/Xray-core/common/net"
 	"github.com/GFW-knocker/Xray-core/common/net/cnc"
 	"github.com/GFW-knocker/Xray-core/common/session"
@@ -13,6 +11,8 @@ import (
 	"github.com/GFW-knocker/Xray-core/transport"
 	"github.com/GFW-knocker/Xray-core/transport/internet"
 	"github.com/GFW-knocker/Xray-core/transport/pipe"
+	M "github.com/sagernet/sing/common/metadata"
+	N "github.com/sagernet/sing/common/network"
 )
 
 var _ N.Dialer = (*XrayDialer)(nil)

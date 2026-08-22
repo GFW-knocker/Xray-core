@@ -3,8 +3,8 @@ package net_test
 import (
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
 	. "github.com/GFW-knocker/Xray-core/common/net"
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestDestinationProperty(t *testing.T) {

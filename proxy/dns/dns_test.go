@@ -5,8 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
-	"github.com/miekg/dns"
 	"github.com/GFW-knocker/Xray-core/app/dispatcher"
 	dnsapp "github.com/GFW-knocker/Xray-core/app/dns"
 	"github.com/GFW-knocker/Xray-core/app/policy"
@@ -22,6 +20,8 @@ import (
 	"github.com/GFW-knocker/Xray-core/proxy/dokodemo"
 	"github.com/GFW-knocker/Xray-core/testing/servers/tcp"
 	"github.com/GFW-knocker/Xray-core/testing/servers/udp"
+	"github.com/google/go-cmp/cmp"
+	"github.com/miekg/dns"
 )
 
 type staticHandler struct{}

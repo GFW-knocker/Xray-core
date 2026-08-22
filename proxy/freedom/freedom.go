@@ -722,11 +722,11 @@ func (w *NoisePacketWriter) sendNoise() error {
 			return errors.New("unreachable, applyTo is ip/ipv4/ipv6, got: ", n.ApplyTo)
 		}
 
-		//User input string or base64 encoded string
+		// User input string or base64 encoded string
 		if n.Packet != nil {
 			noise = n.Packet
 		} else {
-			//Random noise
+			// Random noise
 			noise, err = GenerateRandomBytes(randBetween(int64(n.LengthMin), int64(n.LengthMax)))
 		}
 		if err != nil {

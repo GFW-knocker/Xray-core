@@ -9,12 +9,12 @@ import (
 	"net/http/httptrace"
 	"sync"
 
-	"github.com/apernet/quic-go/http3"
 	"github.com/GFW-knocker/Xray-core/common"
 	"github.com/GFW-knocker/Xray-core/common/buf"
 	"github.com/GFW-knocker/Xray-core/common/errors"
 	"github.com/GFW-knocker/Xray-core/common/net"
 	"github.com/GFW-knocker/Xray-core/common/signal/done"
+	"github.com/apernet/quic-go/http3"
 )
 
 // interface to abstract between use of browser dialer, vs net/http

@@ -8,8 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/GFW-knocker/Xray-core/app/commander"
 	"github.com/GFW-knocker/Xray-core/app/policy"
 	"github.com/GFW-knocker/Xray-core/app/proxyman"
@@ -29,6 +27,8 @@ import (
 	"github.com/GFW-knocker/Xray-core/proxy/vmess/inbound"
 	"github.com/GFW-knocker/Xray-core/proxy/vmess/outbound"
 	"github.com/GFW-knocker/Xray-core/testing/servers/tcp"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/testing/protocmp"

@@ -5,6 +5,13 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
+# Pinned: gofumpt adds rules between releases, and @latest would turn any such
+# release into a spontaneous CI failure on unrelated PRs. Bump deliberately,
+# together with GOFUMPT_VERSION in infra/mvlessgen/sync-mvless.sh, and re-run
+# `go run ./infra/vformat/main.go -pwd ./`.
+env:
+  GOFUMPT_VERSION: v0.10.0
+
 jobs:
   check-assets:
     runs-on: ubuntu-latest
@@ -68,7 +75,7 @@ jobs:
           cache: false
       - name: Check Format
         run: |
-          go install -v mvdan.cc/gofumpt@latest
+          go install -v mvdan.cc/gofumpt@${{ env.GOFUMPT_VERSION }}
           go run ./infra/vformat/main.go -mode check -pwd ./
 
   check-mvless:
@@ -99,6 +106,8 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install protoc-gen-go
         run: go install google.golang.org/protobuf/cmd/protoc-gen-go@v${{ steps.pbver.outputs.gen }}
+      - name: Install gofumpt
+        run: go install mvdan.cc/gofumpt@${{ env.GOFUMPT_VERSION }}
       # MVLESS must stay a pure rename of VLESS plus the version byte.
       - name: Check MVLESS is in sync with VLESS
         run: bash infra/mvlessgen/verify-mvless.sh

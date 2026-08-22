@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
 	"github.com/GFW-knocker/Xray-core/common"
 	. "github.com/GFW-knocker/Xray-core/common/task"
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestExecuteParallel(t *testing.T) {

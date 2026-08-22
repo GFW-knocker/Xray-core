@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
 	. "github.com/GFW-knocker/Xray-core/app/dns"
 	"github.com/GFW-knocker/Xray-core/common"
 	"github.com/GFW-knocker/Xray-core/common/net"
 	"github.com/GFW-knocker/Xray-core/features/dns"
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestQUICNameServer(t *testing.T) {

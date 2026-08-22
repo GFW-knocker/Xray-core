@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
 	"github.com/GFW-knocker/Xray-core/common"
 	"github.com/GFW-knocker/Xray-core/common/buf"
 	"github.com/GFW-knocker/Xray-core/common/net"
 	"github.com/GFW-knocker/Xray-core/common/protocol"
 	. "github.com/GFW-knocker/Xray-core/proxy/socks"
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestUDPEncoding(t *testing.T) {

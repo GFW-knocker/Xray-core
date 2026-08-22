@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
 	"github.com/GFW-knocker/Xray-core/common"
 	"github.com/GFW-knocker/Xray-core/common/buf"
 	"github.com/GFW-knocker/Xray-core/common/serial"
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestUint16Serial(t *testing.T) {

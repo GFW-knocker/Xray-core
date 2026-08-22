@@ -12,10 +12,10 @@ import (
 	"github.com/GFW-knocker/Xray-core/core"
 	"github.com/GFW-knocker/Xray-core/infra/conf"
 	"github.com/GFW-knocker/Xray-core/infra/conf/serial"
+	mvlessin "github.com/GFW-knocker/Xray-core/proxy/mvless/inbound"
 	"github.com/GFW-knocker/Xray-core/proxy/shadowsocks"
 	"github.com/GFW-knocker/Xray-core/proxy/shadowsocks_2022"
 	"github.com/GFW-knocker/Xray-core/proxy/trojan"
-	mvlessin "github.com/GFW-knocker/Xray-core/proxy/mvless/inbound"
 	vlessin "github.com/GFW-knocker/Xray-core/proxy/vless/inbound"
 	vmessin "github.com/GFW-knocker/Xray-core/proxy/vmess/inbound"
 

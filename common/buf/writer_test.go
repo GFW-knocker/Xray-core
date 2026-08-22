@@ -7,10 +7,10 @@ import (
 	"io"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
 	"github.com/GFW-knocker/Xray-core/common"
 	. "github.com/GFW-knocker/Xray-core/common/buf"
 	"github.com/GFW-knocker/Xray-core/transport/pipe"
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestWriter(t *testing.T) {

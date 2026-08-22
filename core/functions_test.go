@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
 	"github.com/GFW-knocker/Xray-core/app/dispatcher"
 	"github.com/GFW-knocker/Xray-core/app/proxyman"
 	"github.com/GFW-knocker/Xray-core/common"
@@ -17,6 +16,7 @@ import (
 	"github.com/GFW-knocker/Xray-core/proxy/freedom"
 	"github.com/GFW-knocker/Xray-core/testing/servers/tcp"
 	"github.com/GFW-knocker/Xray-core/testing/servers/udp"
+	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 )
 

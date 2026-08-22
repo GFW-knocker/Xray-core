@@ -1,7 +1,6 @@
 package reality
 
 import (
-
 	"bytes"
 	"context"
 	"crypto/ecdh"
@@ -22,18 +21,17 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/cloudflare/circl/sign/mldsa/mldsa65"
-	utls "github.com/refraction-networking/utls"
-	"github.com/xtls/reality"
 	"github.com/GFW-knocker/Xray-core/common/crypto"
 	"github.com/GFW-knocker/Xray-core/common/errors"
 	"github.com/GFW-knocker/Xray-core/common/net"
 	"github.com/GFW-knocker/Xray-core/common/utils"
 	"github.com/GFW-knocker/Xray-core/core"
 	"github.com/GFW-knocker/Xray-core/transport/internet/tls"
+	"github.com/cloudflare/circl/sign/mldsa/mldsa65"
+	utls "github.com/refraction-networking/utls"
+	"github.com/xtls/reality"
 	"golang.org/x/crypto/hkdf"
 	"golang.org/x/net/http2"
-	
 )
 
 type Conn struct {

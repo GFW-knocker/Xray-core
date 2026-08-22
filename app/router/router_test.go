@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/golang/mock/gomock"
 	. "github.com/GFW-knocker/Xray-core/app/router"
 	"github.com/GFW-knocker/Xray-core/common"
 	"github.com/GFW-knocker/Xray-core/common/geodata"
@@ -14,6 +13,7 @@ import (
 	"github.com/GFW-knocker/Xray-core/features/outbound"
 	routing_session "github.com/GFW-knocker/Xray-core/features/routing/session"
 	"github.com/GFW-knocker/Xray-core/testing/mocks"
+	"github.com/golang/mock/gomock"
 )
 
 type mockOutboundManager struct {

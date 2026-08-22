@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
 	. "github.com/GFW-knocker/Xray-core/common/serial"
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestToString(t *testing.T) {

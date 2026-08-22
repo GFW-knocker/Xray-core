@@ -19,10 +19,17 @@ bash infra/mvlessgen/verify-mvless.sh    # check MVLESS has not drifted
 and fails the build if the committed MVLESS is not exactly what the generator
 produces from the current VLESS sources.
 
-Both need `protoc` and `protoc-gen-go` at the versions named in
-`core/config.pb.go`'s header, on `PATH` or via `$PROTOC` / `$PROTOC_GEN_GO`.
-`sync-mvless.sh` checks the generated headers and tells you the exact versions
-if they are wrong.
+Both need:
+
+- `protoc` and `protoc-gen-go` at the versions named in `core/config.pb.go`'s
+  header — on `PATH` or via `$PROTOC` / `$PROTOC_GEN_GO`. `sync-mvless.sh`
+  checks the generated headers and tells you the exact versions if they're wrong.
+- `gofumpt` at `GOFUMPT_VERSION` (kept in step with
+  `.github/workflows/test.yml`) — found in `GOPATH/bin`, on `PATH`, or via
+  `$GOFUMPT`. It must be the formatter CI checks with, not plain `gofmt`:
+  otherwise the generator could emit files that `check-format` rejects and
+  nobody can fix, since hand-formatting a generated file breaks
+  `verify-mvless.sh`.
 
 ## What the generator does
 
@@ -36,7 +43,7 @@ if they are wrong.
    encryption package, so a future VLESS change cannot slip one through.
 3. Applies the one permitted semantic change: `Version = byte(150)`.
 4. Regenerates `*.pb.go` with protoc and checks the headers match the repo's.
-5. Runs `gofmt`, then restores each file's line endings to match its VLESS
+5. Runs `gofumpt`, then restores each file's line endings to match its VLESS
    source (`proxy/vless` is CRLF here, `infra/conf` is LF).
 
 ## Adding a wire-critical string

@@ -5,9 +5,9 @@ import (
 	"encoding/hex"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
 	"github.com/GFW-knocker/Xray-core/common"
 	. "github.com/GFW-knocker/Xray-core/common/crypto"
+	"github.com/google/go-cmp/cmp"
 )
 
 func mustDecodeHex(s string) []byte {

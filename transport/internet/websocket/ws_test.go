@@ -6,11 +6,10 @@ import (
 	"testing"
 	"time"
 
-
 	"github.com/GFW-knocker/Xray-core/common"
 	"github.com/GFW-knocker/Xray-core/common/net"
 	"github.com/GFW-knocker/Xray-core/common/protocol/tls/cert"
-  "github.com/GFW-knocker/Xray-core/testing/servers/tcp"
+	"github.com/GFW-knocker/Xray-core/testing/servers/tcp"
 	"github.com/GFW-knocker/Xray-core/transport/internet"
 	"github.com/GFW-knocker/Xray-core/transport/internet/stat"
 	"github.com/GFW-knocker/Xray-core/transport/internet/tls"

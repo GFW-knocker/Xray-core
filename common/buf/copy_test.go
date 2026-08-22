@@ -5,10 +5,10 @@ import (
 	"io"
 	"testing"
 
-	"github.com/golang/mock/gomock"
 	"github.com/GFW-knocker/Xray-core/common/buf"
 	"github.com/GFW-knocker/Xray-core/common/errors"
 	"github.com/GFW-knocker/Xray-core/testing/mocks"
+	"github.com/golang/mock/gomock"
 )
 
 func TestReadError(t *testing.T) {

@@ -5,9 +5,9 @@ import (
 	"io"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
 	"github.com/GFW-knocker/Xray-core/common"
 	. "github.com/GFW-knocker/Xray-core/infra/conf/json"
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestReader(t *testing.T) {

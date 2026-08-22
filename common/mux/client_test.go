@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang/mock/gomock"
 	"github.com/GFW-knocker/Xray-core/common"
 	"github.com/GFW-knocker/Xray-core/common/errors"
 	"github.com/GFW-knocker/Xray-core/common/mux"
@@ -14,6 +13,7 @@ import (
 	"github.com/GFW-knocker/Xray-core/testing/mocks"
 	"github.com/GFW-knocker/Xray-core/transport"
 	"github.com/GFW-knocker/Xray-core/transport/pipe"
+	"github.com/golang/mock/gomock"
 )
 
 func TestIncrementalPickerFailure(t *testing.T) {

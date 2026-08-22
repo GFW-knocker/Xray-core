@@ -8,10 +8,10 @@ import (
 	"net"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
 	"github.com/GFW-knocker/Xray-core/common"
 	. "github.com/GFW-knocker/Xray-core/common/buf"
 	"github.com/GFW-knocker/Xray-core/testing/servers/tcp"
+	"github.com/google/go-cmp/cmp"
 	"golang.org/x/sync/errgroup"
 )
 

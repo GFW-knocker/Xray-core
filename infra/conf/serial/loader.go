@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"io"
 
-	"github.com/ghodss/yaml"
-	"github.com/pelletier/go-toml"
 	"github.com/GFW-knocker/Xray-core/common/errors"
 	"github.com/GFW-knocker/Xray-core/core"
 	"github.com/GFW-knocker/Xray-core/infra/conf"
 	json_reader "github.com/GFW-knocker/Xray-core/infra/conf/json"
+	"github.com/ghodss/yaml"
+	"github.com/pelletier/go-toml"
 )
 
 type offset struct {

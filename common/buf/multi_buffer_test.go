@@ -7,9 +7,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
 	"github.com/GFW-knocker/Xray-core/common"
 	. "github.com/GFW-knocker/Xray-core/common/buf"
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestMultiBufferRead(t *testing.T) {
