@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"math/big"
-	"slices"
 	"time"
 
 	"github.com/GFW-knocker/Xray-core/common/buf"
@@ -93,15 +92,23 @@ func (c *UConn) HandshakeContextServerName(ctx context.Context) string {
 	return c.ConnectionState().ServerName
 }
 
-// WebsocketHandshakeContext basically calls UConn.Handshake inside it but it will try
-// to build outer ALPN to `http/1.1` or `h2 http/1.1` (if manually specified for camouflage)
+// WebsocketHandshakeContext basically calls UConn.Handshake inside it but it will only
+// send http/1.1 in its ALPN.
+//
+// GFW-knocker: upstream (#6034) lets an explicit `"alpn": ["h2", "http/1.1"]` through
+// here as ClientHello camouflage. That silently repurposed a value which older cores
+// ignored on this path, so long-standing WSS/HTTPUpgrade configs carrying the common
+// ["h2","http/1.1"] default suddenly negotiate h2 against an h2-capable CDN
+// (Cloudflare picks it), and the HTTP/1.1 Upgrade then reads back an HTTP/2 SETTINGS
+// frame. WebSocket needs RFC 8441 Extended CONNECT to run over h2 and gorilla/websocket
+// does not implement it, so h2 can only ever break these transports.
+//
+// We keep the pre-#6034 behaviour: always offer http/1.1 only. Camouflage is still
+// available -- and safe -- via ECH below, where the outer ALPN stays h2,http/1.1 while
+// the real http/1.1 rides inside the encrypted ClientHello.
 func (c *UConn) WebsocketHandshakeContext(ctx context.Context) error {
 	config := *utils.AccessField[*utls.Config](c, "config")
-	ALPN := slices.Clone(config.NextProtos)
-	// set other kinds of ALPN to http/1.1
-	if !slices.Equal(ALPN, []string{"h2", "http/1.1"}) {
-		ALPN = []string{"http/1.1"}
-	}
+	ALPN := []string{"http/1.1"}
 	// Build the handshake state. This will apply every variable of the TLS of the
 	// fingerprint in the UConn
 	if err := c.BuildHandshakeState(); err != nil {
