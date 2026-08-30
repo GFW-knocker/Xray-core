@@ -66,11 +66,8 @@ require (
 	github.com/xtaci/kcp-go/v5 v5.6.8 // indirect
 	github.com/xtaci/smux v1.5.24 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
-	golang.org/x/mod v0.38.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
-	golang.org/x/tools v0.48.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
