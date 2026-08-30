@@ -168,6 +168,7 @@ type DeviceConfig struct {
 	Wnoisecount    string                      `protobuf:"bytes,11,opt,name=wnoisecount,proto3" json:"wnoisecount,omitempty"`
 	Wnoisedelay    string                      `protobuf:"bytes,12,opt,name=wnoisedelay,proto3" json:"wnoisedelay,omitempty"`
 	Wpayloadsize   string                      `protobuf:"bytes,13,opt,name=wpayloadsize,proto3" json:"wpayloadsize,omitempty"`
+	DNS            []string                    `protobuf:"bytes,14,rep,name=DNS,proto3" json:"DNS,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -293,6 +294,13 @@ func (x *DeviceConfig) GetWpayloadsize() string {
 	return ""
 }
 
+func (x *DeviceConfig) GetDNS() []string {
+	if x != nil {
+		return x.DNS
+	}
+	return nil
+}
+
 var File_proxy_wireguard_config_proto protoreflect.FileDescriptor
 
 const file_proxy_wireguard_config_proto_rawDesc = "" +
@@ -307,7 +315,7 @@ const file_proxy_wireguard_config_proto_rawDesc = "" +
 	"\n" +
 	"keep_alive\x18\x04 \x01(\tR\tkeepAlive\x12\x1f\n" +
 	"\vallowed_ips\x18\x05 \x03(\tR\n" +
-	"allowedIps\"\xdc\x04\n" +
+	"allowedIps\"\xee\x04\n" +
 	"\fDeviceConfig\x12\x1d\n" +
 	"\n" +
 	"secret_key\x18\x01 \x01(\tR\tsecretKey\x12\x1a\n" +
@@ -323,7 +331,8 @@ const file_proxy_wireguard_config_proto_rawDesc = "" +
 	" \x01(\tR\x06wnoise\x12 \n" +
 	"\vwnoisecount\x18\v \x01(\tR\vwnoisecount\x12 \n" +
 	"\vwnoisedelay\x18\f \x01(\tR\vwnoisedelay\x12\"\n" +
-	"\fwpayloadsize\x18\r \x01(\tR\fwpayloadsize\"\\\n" +
+	"\fwpayloadsize\x18\r \x01(\tR\fwpayloadsize\x12\x10\n" +
+	"\x03DNS\x18\x0e \x03(\tR\x03DNS\"\\\n" +
 	"\x0eDomainStrategy\x12\f\n" +
 	"\bFORCE_IP\x10\x00\x12\r\n" +
 	"\tFORCE_IP4\x10\x01\x12\r\n" +

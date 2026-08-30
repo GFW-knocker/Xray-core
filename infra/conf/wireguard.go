@@ -70,6 +70,7 @@ type WireGuardConfig struct {
 	Wnoisecount    string                 `json:"wnoisecount"`
 	Wnoisedelay    string                 `json:"wnoisedelay"`
 	Wpayloadsize   string                 `json:"wpayloadsize"`
+	DNS            []string               `json:"remoteDNS"`
 }
 
 func (c *WireGuardConfig) Build() (proto.Message, error) {
@@ -150,6 +151,7 @@ func (c *WireGuardConfig) Build() (proto.Message, error) {
 
 	config.IsClient = c.IsClient
 	config.NoKernelTun = c.NoKernelTun
+	config.DNS = c.DNS
 
 	return config, nil
 }

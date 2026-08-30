@@ -6,10 +6,11 @@ import (
 	"fmt"
 	gonet "net"
 	"net/netip"
-	reflect "reflect"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/GFW-knocker/Xray-core/common"
 	"github.com/GFW-knocker/Xray-core/common/buf"
@@ -31,6 +32,11 @@ import (
 	"github.com/GFW-knocker/wireguard/tun"
 )
 
+type entry struct {
+	got  []net.IP
+	time time.Time
+}
+
 type Handler struct {
 	conf          *DeviceConfig
 	policyManager policy.Manager
@@ -44,6 +50,11 @@ type Handler struct {
 	tnet *Net
 	dev  *device.Device
 	mu   sync.Mutex
+
+	// TODO: cache cleanup loop
+	local   bool
+	cache   map[string]entry
+	cacheMu sync.Mutex
 }
 
 func NewClient(ctx context.Context, conf *DeviceConfig) (*Handler, error) {
@@ -99,6 +110,20 @@ func NewClient(ctx context.Context, conf *DeviceConfig) (*Handler, error) {
 		return nil, err
 	}
 
+	local := false
+	dns := conf.DNS
+	if len(dns) == 0 {
+		dns = []string{"1.1.1.1", "1.0.0.1", "2606:4700:4700::1111", "2606:4700:4700::1001"}
+	}
+	if len(dns) == 1 && dns[0] == "local" {
+		local = true
+		dns = nil
+	}
+	dnses := make([]netip.Addr, 0, len(dns))
+	for _, dns := range dns {
+		dnses = append(dnses, netip.MustParseAddr(dns))
+	}
+
 	kernelTunSupported, err := KernelTunSupported()
 	if err != nil {
 		errors.LogWarningInner(context.Background(), err, "Failed to check kernel TUN support")
@@ -107,10 +132,10 @@ func NewClient(ctx context.Context, conf *DeviceConfig) (*Handler, error) {
 	var tnet *Net
 	if !conf.NoKernelTun && kernelTunSupported {
 		errors.LogWarning(context.Background(), "Using kernel TUN")
-		tun, tnet, err = createKernelTun(localAddresses, []netip.Addr{netip.MustParseAddr("1.1.1.1"), netip.MustParseAddr("1.0.0.1"), netip.MustParseAddr("2606:4700:4700::1111"), netip.MustParseAddr("2606:4700:4700::1001")}, int(conf.Mtu))
+		tun, tnet, err = createKernelTun(localAddresses, dnses, int(conf.Mtu))
 	} else {
 		errors.LogWarning(context.Background(), "Using gVisor TUN")
-		tun, tnet, _, err = CreateNetTUN(localAddresses, []netip.Addr{netip.MustParseAddr("1.1.1.1"), netip.MustParseAddr("1.0.0.1"), netip.MustParseAddr("2606:4700:4700::1111"), netip.MustParseAddr("2606:4700:4700::1001")}, int(conf.Mtu), true)
+		tun, tnet, _, err = CreateNetTUN(localAddresses, dnses, int(conf.Mtu), true)
 	}
 	if err != nil {
 		return nil, err
@@ -127,6 +152,9 @@ func NewClient(ctx context.Context, conf *DeviceConfig) (*Handler, error) {
 
 		tun:  tun,
 		tnet: tnet,
+
+		local: local,
+		cache: make(map[string]entry),
 	}, nil
 }
 
@@ -462,28 +490,37 @@ func (h *Handler) init(ctx context.Context) error {
 // outbounds are chained, because resolving the outer endpoint would have to
 // traverse the inner tunnel.
 func (h *Handler) resolveLocal(host string) (net.IP, error) {
-	return resolveDomain(host, h.conf.DomainStrategy, net.LookupIP)
-}
-
-func (h *Handler) resolveRemote(host string) (net.IP, error) {
-	return resolveDomain(host, h.conf.DomainStrategy, func(host string) ([]net.IP, error) {
-		addrs, err := h.tnet.LookupHost(host)
-		if err != nil {
-			return nil, err
-		}
-		ips := make([]net.IP, 0, len(addrs))
-		for _, addr := range addrs {
-			ips = append(ips, net.ParseIP(addr))
-		}
-		return ips, nil
+	return h.resolveDomain(host, h.conf.DomainStrategy, func(host string) ([]net.IP, uint32, error) {
+		ips, err := net.LookupIP(host)
+		// TTL 0 keeps the previous behaviour: the OS resolver already caches,
+		// so nothing is kept in the handler's own cache.
+		return ips, 0, err
 	})
 }
 
-func resolveDomain(host string, strategy DeviceConfig_DomainStrategy, lookupIP func(host string) ([]net.IP, error)) (net.IP, error) {
+func (h *Handler) resolveRemote(host string) (net.IP, error) {
+	return h.resolveDomain(host, h.conf.DomainStrategy, func(host string) ([]net.IP, uint32, error) {
+		if h.local {
+			return h.dns.LookupIP(host, dns.IPOption{IPv4Enable: true, IPv6Enable: true})
+		}
+		return h.tnet.LookupHost(host)
+	})
+}
+
+func (h *Handler) resolveDomain(host string, strategy DeviceConfig_DomainStrategy, lookupIP func(host string) ([]net.IP, uint32, error)) (net.IP, error) {
 	if ip := net.ParseIP(host); ip != nil {
 		return ip, nil
 	}
-	ips, err := lookupIP(host)
+	h.cacheMu.Lock()
+	if entry, ok := h.cache[host]; ok {
+		if time.Now().Before(entry.time) {
+			h.cacheMu.Unlock()
+			return entry.got[dice.Roll(len(entry.got))], nil
+		}
+		delete(h.cache, host)
+	}
+	h.cacheMu.Unlock()
+	ips, ttl, err := lookupIP(host)
 	if err != nil {
 		return nil, err
 	}
@@ -523,6 +560,13 @@ func resolveDomain(host string, strategy DeviceConfig_DomainStrategy, lookupIP f
 	if len(got) == 0 {
 		return nil, dns.ErrEmptyResponse
 	}
+	entry := entry{
+		got:  got,
+		time: time.Now().Add(time.Duration(ttl) * time.Second),
+	}
+	h.cacheMu.Lock()
+	h.cache[host] = entry
+	h.cacheMu.Unlock()
 	return got[dice.Roll(len(got))], nil
 }
 
