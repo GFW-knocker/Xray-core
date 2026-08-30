@@ -31,6 +31,10 @@ message Fragment {
   string host1_domain = 11;
   string host2_header = 12;
   string host2_domain = 13;
+  // Number of TLS records batched into a single write before sleeping for
+  // "interval". Defaults to 10-20 when absent from the JSON config.
+  uint64 batch_min = 14;
+  uint64 batch_max = 15;
 }
 
 message Noise {

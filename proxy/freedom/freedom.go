@@ -795,6 +795,10 @@ type FragmentWriter struct {
 
 var re = regexp.MustCompile("(?i)(\r\nHost:.*\r\n)")
 
+// fragmentBufferSlack is spare room added to both TLS-fragmentation scratch
+// buffers so they are never sized to an exact fit.
+const fragmentBufferSlack = 256
+
 func (f *FragmentWriter) Write(b []byte) (int, error) {
 	f.count++
 
@@ -828,9 +832,55 @@ func (f *FragmentWriter) Write(b []byte) (int, error) {
 			return f.writer.Write(b)
 		}
 		data := b[5:recordLen]
-		buf := make([]byte, 2048)
-		queue := make([]byte, 8192)
-		n_queue := int(randBetween(int64(10), int64(20)))
+
+		// A fragment can never be longer than the record being split, so the
+		// per-record scratch buffer only has to cover the largest slice the
+		// loop below can actually cut. LengthMin/LengthMax are ordered and
+		// capped at 65535 by the config parser, so both convert cleanly here.
+		maxPayload := int64(f.fragment.LengthMax)
+		if maxPayload > int64(len(data)) {
+			maxPayload = int64(len(data))
+		}
+		if maxPayload < 1 {
+			maxPayload = 1
+		}
+
+		// Every fragment but the last carries at least LengthMin bytes, which
+		// caps how many records this record can ever be cut into. The clamp
+		// also keeps the division below safe.
+		minPayload := int64(f.fragment.LengthMin)
+		if minPayload < 1 {
+			minPayload = 1
+		}
+		maxRecords := (int64(len(data)) + minPayload - 1) / minPayload
+
+		nQueue := randBetween(int64(f.fragment.BatchMin), int64(f.fragment.BatchMax))
+		if nQueue < 0 {
+			nQueue = 0
+		}
+		// Batching more records than the data can be cut into is meaningless,
+		// and clamping here keeps the sizing arithmetic below in range however
+		// large "batch" is configured.
+		if nQueue > maxRecords {
+			nQueue = maxRecords
+		}
+
+		// The queue holds at most nQueue+1 records, and can never hold more
+		// than the whole record plus one 5-byte header per fragment. That
+		// second bound is what stops a large "batch" from allocating a large
+		// buffer.
+		queueCap := int64(len(data)) + 5*maxRecords
+		if batchCap := (nQueue + 1) * (5 + maxPayload); batchCap < queueCap {
+			queueCap = batchCap
+		}
+
+		// Both bounds above are exact, but getting one wrong is a panic on a
+		// hot path, so neither buffer is sized to a tight fit: the queue gets
+		// room for a whole extra maximum-size record on top of its bound, and
+		// both get a fixed pad beyond that.
+		buf := make([]byte, 5+maxPayload+fragmentBufferSlack)
+		queue := make([]byte, queueCap+5+maxPayload+fragmentBufferSlack)
+		n_queue := int(nQueue)
 		L_queue := 0
 		c_queue := 0
 		for from := 0; ; {

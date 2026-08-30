@@ -31,10 +31,27 @@ type FreedomConfig struct {
 	FinalRules     []*FreedomFinalRuleConfig `json:"finalRules"`
 }
 
+// Upper bounds for the "fragment" ranges. These exist because the values are
+// parsed as uint64 but used as int64 in proxy/freedom: a value above 2^63 wraps
+// negative there, which panics on the slice bounds (length, packets) or
+// silently skips the delay (interval).
+const (
+	// A TLS record's length field is two bytes, so a fragment can never
+	// usefully be longer -- and a batch can never hold more records than a
+	// maximum-size record can be split into.
+	maxFragmentLength  = 65535
+	maxFragmentBatch   = 65535
+	maxFragmentPackets = 65535
+	// Milliseconds. An hour is far past any real use and keeps the
+	// time.Duration multiplication in proxy/freedom in range.
+	maxFragmentInterval = 3600000
+)
+
 type Fragment struct {
 	Packets      string      `json:"packets"`
 	Length       string      `json:"length"`
 	Interval     string      `json:"interval"`
+	Batch        string      `json:"batch"`
 	Host1_header string      `json:"host1_header"`
 	Host1_domain string      `json:"host1_domain"`
 	Host2_header string      `json:"host2_header"`
@@ -139,6 +156,9 @@ func (c *FreedomConfig) Build() (proto.Message, error) {
 			if config.Fragment.PacketsFrom == 0 {
 				return nil, errors.New("PacketsFrom can't be 0")
 			}
+			if config.Fragment.PacketsTo > maxFragmentPackets {
+				return nil, errors.New("PacketsTo can't be greater than ", maxFragmentPackets)
+			}
 		}
 
 		{
@@ -165,6 +185,9 @@ func (c *FreedomConfig) Build() (proto.Message, error) {
 			if config.Fragment.LengthMin == 0 {
 				return nil, errors.New("LengthMin can't be 0")
 			}
+			if config.Fragment.LengthMax > maxFragmentLength {
+				return nil, errors.New("LengthMax can't be greater than ", maxFragmentLength)
+			}
 		}
 
 		{
@@ -187,6 +210,40 @@ func (c *FreedomConfig) Build() (proto.Message, error) {
 			}
 			if config.Fragment.IntervalMin > config.Fragment.IntervalMax {
 				config.Fragment.IntervalMin, config.Fragment.IntervalMax = config.Fragment.IntervalMax, config.Fragment.IntervalMin
+			}
+			if config.Fragment.IntervalMax > maxFragmentInterval {
+				return nil, errors.New("IntervalMax can't be greater than ", maxFragmentInterval, " ms")
+			}
+		}
+
+		{
+			// How many TLS records are batched into one write before sleeping
+			// for "interval". Absent means 10-20, which is what was hardcoded
+			// before this became configurable.
+			if c.Fragment.Batch == "" {
+				config.Fragment.BatchMin = 10
+				config.Fragment.BatchMax = 20
+			} else {
+				batchMinMax := strings.Split(c.Fragment.Batch, "-")
+				if len(batchMinMax) == 2 {
+					config.Fragment.BatchMin, err = strconv.ParseUint(batchMinMax[0], 10, 64)
+					config.Fragment.BatchMax, err2 = strconv.ParseUint(batchMinMax[1], 10, 64)
+				} else {
+					config.Fragment.BatchMin, err = strconv.ParseUint(batchMinMax[0], 10, 64)
+					config.Fragment.BatchMax = config.Fragment.BatchMin
+				}
+				if err != nil {
+					return nil, errors.New("Invalid BatchMin").Base(err)
+				}
+				if err2 != nil {
+					return nil, errors.New("Invalid BatchMax").Base(err2)
+				}
+				if config.Fragment.BatchMin > config.Fragment.BatchMax {
+					config.Fragment.BatchMin, config.Fragment.BatchMax = config.Fragment.BatchMax, config.Fragment.BatchMin
+				}
+				if config.Fragment.BatchMax > maxFragmentBatch {
+					return nil, errors.New("BatchMax can't be greater than ", maxFragmentBatch)
+				}
 			}
 		}
 

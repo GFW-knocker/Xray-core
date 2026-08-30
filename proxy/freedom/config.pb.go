@@ -126,11 +126,15 @@ type Fragment struct {
 	MaxSplitMin uint64                 `protobuf:"varint,7,opt,name=max_split_min,json=maxSplitMin,proto3" json:"max_split_min,omitempty"`
 	MaxSplitMax uint64                 `protobuf:"varint,8,opt,name=max_split_max,json=maxSplitMax,proto3" json:"max_split_max,omitempty"`
 	// GFW-knocker additions
-	FakeHost      bool   `protobuf:"varint,9,opt,name=fake_host,json=fakeHost,proto3" json:"fake_host,omitempty"`
-	Host1Header   string `protobuf:"bytes,10,opt,name=host1_header,json=host1Header,proto3" json:"host1_header,omitempty"`
-	Host1Domain   string `protobuf:"bytes,11,opt,name=host1_domain,json=host1Domain,proto3" json:"host1_domain,omitempty"`
-	Host2Header   string `protobuf:"bytes,12,opt,name=host2_header,json=host2Header,proto3" json:"host2_header,omitempty"`
-	Host2Domain   string `protobuf:"bytes,13,opt,name=host2_domain,json=host2Domain,proto3" json:"host2_domain,omitempty"`
+	FakeHost    bool   `protobuf:"varint,9,opt,name=fake_host,json=fakeHost,proto3" json:"fake_host,omitempty"`
+	Host1Header string `protobuf:"bytes,10,opt,name=host1_header,json=host1Header,proto3" json:"host1_header,omitempty"`
+	Host1Domain string `protobuf:"bytes,11,opt,name=host1_domain,json=host1Domain,proto3" json:"host1_domain,omitempty"`
+	Host2Header string `protobuf:"bytes,12,opt,name=host2_header,json=host2Header,proto3" json:"host2_header,omitempty"`
+	Host2Domain string `protobuf:"bytes,13,opt,name=host2_domain,json=host2Domain,proto3" json:"host2_domain,omitempty"`
+	// Number of TLS records batched into a single write before sleeping for
+	// "interval". Defaults to 10-20 when absent from the JSON config.
+	BatchMin      uint64 `protobuf:"varint,14,opt,name=batch_min,json=batchMin,proto3" json:"batch_min,omitempty"`
+	BatchMax      uint64 `protobuf:"varint,15,opt,name=batch_max,json=batchMax,proto3" json:"batch_max,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -254,6 +258,20 @@ func (x *Fragment) GetHost2Domain() string {
 		return x.Host2Domain
 	}
 	return ""
+}
+
+func (x *Fragment) GetBatchMin() uint64 {
+	if x != nil {
+		return x.BatchMin
+	}
+	return 0
+}
+
+func (x *Fragment) GetBatchMax() uint64 {
+	if x != nil {
+		return x.BatchMax
+	}
+	return 0
 }
 
 type Noise struct {
@@ -592,7 +610,7 @@ const file_proxy_freedom_config_proto_rawDesc = "" +
 	"\n" +
 	"\x1aproxy/freedom/config.proto\x12\x12xray.proxy.freedom\x1a!common/protocol/server_spec.proto\x1a\x1ftransport/internet/config.proto\x1a\x15common/net/port.proto\x1a\x18common/net/network.proto\x1a\x1bcommon/geodata/geodat.proto\"S\n" +
 	"\x13DestinationOverride\x12<\n" +
-	"\x06server\x18\x01 \x01(\v2$.xray.common.protocol.ServerEndpointR\x06server\"\xc1\x03\n" +
+	"\x06server\x18\x01 \x01(\v2$.xray.common.protocol.ServerEndpointR\x06server\"\xfb\x03\n" +
 	"\bFragment\x12!\n" +
 	"\fpackets_from\x18\x01 \x01(\x04R\vpacketsFrom\x12\x1d\n" +
 	"\n" +
@@ -610,7 +628,9 @@ const file_proxy_freedom_config_proto_rawDesc = "" +
 	" \x01(\tR\vhost1Header\x12!\n" +
 	"\fhost1_domain\x18\v \x01(\tR\vhost1Domain\x12!\n" +
 	"\fhost2_header\x18\f \x01(\tR\vhost2Header\x12!\n" +
-	"\fhost2_domain\x18\r \x01(\tR\vhost2Domain\"\xec\x01\n" +
+	"\fhost2_domain\x18\r \x01(\tR\vhost2Domain\x12\x1b\n" +
+	"\tbatch_min\x18\x0e \x01(\x04R\bbatchMin\x12\x1b\n" +
+	"\tbatch_max\x18\x0f \x01(\x04R\bbatchMax\"\xec\x01\n" +
 	"\x05Noise\x12\x1d\n" +
 	"\n" +
 	"length_min\x18\x01 \x01(\x04R\tlengthMin\x12\x1d\n" +
