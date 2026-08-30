@@ -789,7 +789,8 @@ func (t *FreeBSDTun) syncEscapeFib() error {
 
 	desired := make([]escapeRoute, 0, 2*len(physical))
 	for _, p := range physical {
-		desired = append(desired,
+		desired = append(
+			desired,
 			escapeRoute{prefix: p.connected, ifIndex: p.iface.Index},
 			escapeRoute{prefix: defaultPrefix(p.family), ifIndex: p.iface.Index, gateway: p.gateway},
 		)
