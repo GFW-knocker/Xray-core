@@ -262,6 +262,20 @@ func (c *FragmentMask) Build() (proto.Message, error) {
 		}
 	}
 
+	// ParseRangeString neither orders the pair nor rejects negatives, and the
+	// runtime compares these as uint64: a negative or inverted range makes
+	// every packet miss the window, silently disabling fragmentation instead
+	// of failing. Reject rather than quietly do nothing.
+	if config.PacketsFrom < 0 || config.PacketsTo < 0 {
+		return nil, errors.New("packets range can't be negative")
+	}
+	if config.PacketsFrom > config.PacketsTo {
+		return nil, errors.New("packets range is inverted, from ", config.PacketsFrom, " is greater than to ", config.PacketsTo)
+	}
+	if config.PacketsTo > maxFragmentPackets {
+		return nil, errors.New("packets range can't be greater than ", maxFragmentPackets)
+	}
+
 	if len(c.Lengths) > 0 {
 		for _, r := range c.Lengths {
 			config.LengthsMin = append(config.LengthsMin, int64(r.From))
@@ -270,6 +284,20 @@ func (c *FragmentMask) Build() (proto.Message, error) {
 	} else {
 		config.LengthsMin = append(config.LengthsMin, int64(c.Length.From))
 		config.LengthsMax = append(config.LengthsMax, int64(c.Length.To))
+	}
+
+	// Int32Range accepts negative ranges, but a negative length makes the
+	// split loop compute to < from and panic on the slice that follows. Zero
+	// stays allowed on every entry but the last, which the check below covers.
+	// The upper cap keeps `from + int(...)` in range on 32-bit builds; a
+	// fragment longer than a maximum TLS record can't do anything anyway.
+	for i := range config.LengthsMin {
+		if config.LengthsMin[i] < 0 || config.LengthsMax[i] < 0 {
+			return nil, errors.New("lengths entries can't be negative")
+		}
+		if config.LengthsMax[i] > maxFragmentLength {
+			return nil, errors.New("lengths entries can't be greater than ", maxFragmentLength)
+		}
 	}
 
 	if config.LengthsMin[len(config.LengthsMin)-1] == 0 {
@@ -284,6 +312,18 @@ func (c *FragmentMask) Build() (proto.Message, error) {
 	} else {
 		config.DelaysMin = append(config.DelaysMin, int64(c.Delay.From))
 		config.DelaysMax = append(config.DelaysMax, int64(c.Delay.To))
+	}
+
+	// A negative delay never panics -- it just skips the sleep -- but it is
+	// nonsense that fails silently. The upper cap matters more: Int32Range
+	// reaches 2147483647 ms, which parks the write for 231 hours.
+	for i := range config.DelaysMin {
+		if config.DelaysMin[i] < 0 || config.DelaysMax[i] < 0 {
+			return nil, errors.New("delays entries can't be negative")
+		}
+		if config.DelaysMax[i] > maxFragmentInterval {
+			return nil, errors.New("delays entries can't be greater than ", maxFragmentInterval, " ms")
+		}
 	}
 
 	config.MaxSplitMin = int64(c.MaxSplit.From)
