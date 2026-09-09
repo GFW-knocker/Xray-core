@@ -3,7 +3,7 @@ module github.com/GFW-knocker/Xray-core
 go 1.26.7
 
 require (
-	github.com/GFW-knocker/wireguard v1.0.6
+	github.com/GFW-knocker/wireguard v1.0.7
 	github.com/apernet/quic-go v0.61.1-0.20260806010916-184d081eef3e
 	github.com/cloudflare/circl v1.6.5
 	github.com/ghodss/yaml v1.0.1-0.20220118164431-d8423dcdf344
