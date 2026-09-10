@@ -396,6 +396,12 @@ func (c *TLSConfig) Build() (proto.Message, error) {
 		config.EchServerKeys = EchPrivateKey
 	}
 	config.EchConfigList = c.ECHConfigList
+	if server := plaintextECHDNSServer(c.ECHConfigList); server != "" {
+		errors.LogWarning(context.Background(),
+			"echConfigList uses plaintext DNS (", server, "). The answer is unauthenticated, so anyone ",
+			"on the path can substitute an ECH key they own and read the real SNI the connection is ",
+			"meant to hide. Prefer an authenticated source: \"https://...\" (DoH) or \"probe\".")
+	}
 	if c.ECHSocketSettings != nil {
 		ss, err := c.ECHSocketSettings.Build()
 		if err != nil {
@@ -405,4 +411,28 @@ func (c *TLSConfig) Build() (proto.Message, error) {
 	}
 
 	return config, nil
+}
+
+// plaintextECHDNSServer returns the "udp://" server an echConfigList would
+// fetch the ECH config from, or "" when the source is not plaintext DNS.
+//
+// This is worth warning about because a forged answer is not merely a broken
+// connection: an attacker who supplies an ECHConfig whose private key they hold
+// gets the real SNI handed to them, since the ClientHelloInner is then sealed to
+// their key and sent in the clear. That is the exact disclosure ECH exists to
+// prevent. Checked at config-parse time rather than in ApplyECH, which runs on
+// every dial.
+func plaintextECHDNSServer(echConfigList string) string {
+	if !strings.Contains(echConfigList, "://") {
+		return "" // pinned base64 config, "probe", or unset
+	}
+	// mirrors ApplyECH: "name+server" or just "server"
+	server := echConfigList
+	if parts := strings.SplitN(echConfigList, "+", 2); len(parts) == 2 {
+		server = parts[1]
+	}
+	if !strings.HasPrefix(server, "udp://") {
+		return ""
+	}
+	return server
 }
