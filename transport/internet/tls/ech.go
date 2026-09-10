@@ -61,6 +61,26 @@ func ApplyECH(c *Config, config *tls.Config) error {
 			}
 			config.EncryptedClientHelloConfigList = ECHConfig
 		}()
+		// learn the config from the server itself, no DNS involved
+		if publicName, hostPort, isProbe := parseECHProbe(c.EchConfigList); isProbe {
+			if !net.ParseAddress(publicName).Family().IsDomain() {
+				return errors.New("ECH probe public name must be a domain, got: ", publicName)
+			}
+			rootCAs, poolErr := c.getCertPool()
+			if poolErr != nil {
+				errors.LogErrorInner(context.Background(), poolErr, "failed to load system root certificate for ECH probe")
+			}
+			fingerprint := GetFingerprint(c.Fingerprint)
+			sockopt := c.EchSocketSettings
+			ECHConfig, err = queryECHConfig(echProbeScheme+"://"+hostPort, publicName, sockopt,
+				func() ([]byte, uint32, error) {
+					return echProbe(context.Background(), hostPort, publicName, sockopt, fingerprint, rootCAs)
+				})
+			if err != nil {
+				return errors.New("Failed to obtain ECH config by probing ", hostPort, " as ", publicName).Base(err)
+			}
+			return nil
+		}
 		// query config from dns
 		if strings.Contains(c.EchConfigList, "://") {
 			// parse ECH DNS server in format of "example.com+https://1.1.1.1/dns-query"
@@ -114,10 +134,21 @@ func ECHCacheKey(server, domain string, sockopt *internet.SocketConfig) string {
 	return server + "|" + domain + "|" + fmt.Sprintf("%p", sockopt)
 }
 
+// echFetcher obtains a fresh ECHConfigList along with the number of seconds it
+// stays valid. dnsQuery and echProbe are the two implementations.
+type echFetcher func() ([]byte, uint32, error)
+
 // Update updates the ECH config for given domain and server.
 // this method is concurrent safe, only one update request will be sent, others get the cache.
 // if isLockedUpdate is true, it will not try to acquire the lock.
 func (c *ECHConfigCache) Update(domain string, server string, isLockedUpdate bool, sockopt *internet.SocketConfig) ([]byte, error) {
+	return c.UpdateWith(domain, server, isLockedUpdate, func() ([]byte, uint32, error) {
+		return dnsQuery(server, domain, sockopt)
+	})
+}
+
+// UpdateWith is Update with the acquisition method left to the caller.
+func (c *ECHConfigCache) UpdateWith(domain string, server string, isLockedUpdate bool, fetch echFetcher) ([]byte, error) {
 	if !isLockedUpdate {
 		c.UpdateLock.Lock()
 		defer c.UpdateLock.Unlock()
@@ -128,9 +159,9 @@ func (c *ECHConfigCache) Update(domain string, server string, isLockedUpdate boo
 		errors.LogDebug(context.Background(), "Cache hit for domain after double check: ", domain)
 		return configRecord.config, nil
 	}
-	// Query ECH config from DNS server
+	// Fetch ECH config from the configured source
 	errors.LogDebug(context.Background(), "Trying to query ECH config for domain: ", domain, " with ECH server: ", server)
-	echConfig, ttl, err := dnsQuery(server, domain, sockopt)
+	echConfig, ttl, err := fetch()
 	if err != nil {
 		return nil, err
 	}
@@ -145,6 +176,15 @@ func (c *ECHConfigCache) Update(domain string, server string, isLockedUpdate boo
 // QueryRecord returns the ECH config for given domain.
 // If the record is not in cache or expired, it will query the DNS server and update the cache.
 func QueryRecord(domain string, server string, sockopt *internet.SocketConfig) ([]byte, error) {
+	return queryECHConfig(server, domain, sockopt, func() ([]byte, uint32, error) {
+		return dnsQuery(server, domain, sockopt)
+	})
+}
+
+// queryECHConfig is QueryRecord with the acquisition method left to the caller.
+// server only identifies the cache entry here, so the probe and DNS paths cannot
+// collide even when they name the same domain.
+func queryECHConfig(server string, domain string, sockopt *internet.SocketConfig, fetch echFetcher) ([]byte, error) {
 	GlobalECHConfigCacheKey := ECHCacheKey(server, domain, sockopt)
 	echConfigCache, ok := GlobalECHConfigCache.Load(GlobalECHConfigCacheKey)
 	if !ok {
@@ -162,13 +202,13 @@ func QueryRecord(domain string, server string, sockopt *internet.SocketConfig) (
 	// otherwise return old value immediately and update in a goroutine
 	// but if the cache is too old, wait for update
 	if configRecord.expire.IsZero() || configRecord.expire.Add(time.Hour*6).Before(time.Now()) {
-		return echConfigCache.Update(domain, server, false, sockopt)
+		return echConfigCache.UpdateWith(domain, server, false, fetch)
 	} else {
 		// If someone already acquired the lock, it means it is updating, do not start another update goroutine
 		if echConfigCache.UpdateLock.TryLock() {
 			go func() {
 				defer echConfigCache.UpdateLock.Unlock()
-				echConfigCache.Update(domain, server, true, sockopt)
+				echConfigCache.UpdateWith(domain, server, true, fetch)
 			}()
 		}
 		return configRecord.config, nil
