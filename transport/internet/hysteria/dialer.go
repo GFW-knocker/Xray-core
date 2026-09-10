@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/GFW-knocker/Xray-core/common"
@@ -21,6 +22,7 @@ import (
 	"github.com/GFW-knocker/Xray-core/transport/internet/hysteria/congestion"
 	"github.com/GFW-knocker/Xray-core/transport/internet/hysteria/congestion/bbr"
 	"github.com/GFW-knocker/Xray-core/transport/internet/hysteria/udphop"
+	"github.com/GFW-knocker/Xray-core/transport/internet/quicdial"
 	"github.com/GFW-knocker/Xray-core/transport/internet/stat"
 	"github.com/GFW-knocker/Xray-core/transport/internet/tls"
 	"github.com/apernet/quic-go"
@@ -36,6 +38,10 @@ type client struct {
 	socketConfig   *internet.SocketConfig
 	udpmaskManager *finalmask.UdpmaskManager
 	quicParams     *internet.QuicParams
+
+	// quicVersion remembers which quicdial attempt last connected, so the
+	// v2->v1 fallback is not re-paid on every reconnect.
+	quicVersion atomic.Int32
 
 	conn    *quic.Conn
 	tr      *quic.Transport
@@ -83,6 +89,10 @@ func (c *client) dial(ctx context.Context) error {
 	}
 
 	quicConfig := &quic.Config{
+		// A single version, only to satisfy http3.Transport's validation --
+		// the version actually dialed is chosen per attempt by quicdial.Dial
+		// in the Dial closure below, which prefers v2 and falls back to v1.
+		Versions:                       quicdial.H3[0],
 		InitialStreamReceiveWindow:     quicParams.InitStreamReceiveWindow,
 		MaxStreamReceiveWindow:         quicParams.MaxStreamReceiveWindow,
 		InitialConnectionReceiveWindow: quicParams.InitConnReceiveWindow,
@@ -185,7 +195,10 @@ func (c *client) dial(ctx context.Context) error {
 		TLSClientConfig: c.tlsConfig,
 		QUICConfig:      quicConfig,
 		Dial: func(ctx context.Context, _ string, tlsCfg *go_tls.Config, cfg *quic.Config) (*quic.Conn, error) {
-			qc, err := tr.DialEarly(ctx, udpAddr, tlsCfg, cfg)
+			qc, err := quicdial.Dial(ctx, cfg, quicdial.H3, &c.quicVersion,
+				func(cfg *quic.Config) (*quic.Conn, error) {
+					return tr.DialEarly(ctx, udpAddr, tlsCfg, cfg)
+				})
 			if err != nil {
 				return nil, err
 			}

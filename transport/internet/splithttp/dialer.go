@@ -27,6 +27,7 @@ import (
 	"github.com/GFW-knocker/Xray-core/transport/internet/hysteria/congestion"
 	"github.com/GFW-knocker/Xray-core/transport/internet/hysteria/congestion/bbr"
 	"github.com/GFW-knocker/Xray-core/transport/internet/hysteria/udphop"
+	"github.com/GFW-knocker/Xray-core/transport/internet/quicdial"
 	"github.com/GFW-knocker/Xray-core/transport/internet/reality"
 	"github.com/GFW-knocker/Xray-core/transport/internet/stat"
 	"github.com/GFW-knocker/Xray-core/transport/internet/tls"
@@ -166,7 +167,16 @@ func createHTTPClient(dest net.Destination, streamSettings *internet.MemoryStrea
 			}
 		}
 
+		// One per cached client, so the v2->v1 fallback is paid once for this
+		// destination rather than on every QUIC dial it makes.
+		quicVersion := new(atomic.Int32)
+
 		quicConfig := &quic.Config{
+			// A single version, only to satisfy http3.Transport's validation
+			// -- the version actually dialed is chosen per attempt by
+			// quicdial.Dial in the Dial closure below, which prefers v2 and
+			// falls back to v1 for peers that speak only v1 (some CDN edges).
+			Versions:                       quicdial.H3[0],
 			InitialStreamReceiveWindow:     quicParams.InitStreamReceiveWindow,
 			MaxStreamReceiveWindow:         quicParams.MaxStreamReceiveWindow,
 			InitialConnectionReceiveWindow: quicParams.InitConnReceiveWindow,
@@ -263,7 +273,10 @@ func createHTTPClient(dest net.Destination, streamSettings *internet.MemoryStrea
 					tlsCfg.GetCertificate = nil
 				}
 
-				conn, err := tr.DialEarly(ctx, udpAddr, tlsCfg, cfg)
+				conn, err := quicdial.Dial(ctx, cfg, quicdial.H3, quicVersion,
+					func(cfg *quic.Config) (*quic.Conn, error) {
+						return tr.DialEarly(ctx, udpAddr, tlsCfg, cfg)
+					})
 				if err != nil {
 					return nil, err
 				}

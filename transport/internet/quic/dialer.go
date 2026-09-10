@@ -3,6 +3,7 @@ package quic
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/GFW-knocker/Xray-core/common"
@@ -10,6 +11,7 @@ import (
 	"github.com/GFW-knocker/Xray-core/common/net"
 	"github.com/GFW-knocker/Xray-core/common/task"
 	"github.com/GFW-knocker/Xray-core/transport/internet"
+	"github.com/GFW-knocker/Xray-core/transport/internet/quicdial"
 	"github.com/GFW-knocker/Xray-core/transport/internet/stat"
 	"github.com/GFW-knocker/Xray-core/transport/internet/tls"
 	"github.com/apernet/quic-go"
@@ -44,9 +46,12 @@ func (c *connectionContext) openStream(destAddr net.Addr) (*interConn, error) {
 }
 
 type clientConnections struct {
-	access  sync.Mutex
-	conns   map[net.Destination][]*connectionContext
-	cleanup *task.Periodic
+	access sync.Mutex
+	conns  map[net.Destination][]*connectionContext
+	// quicVersions remembers, per destination, which quicdial attempt last
+	// connected, so the v2->v1 fallback is not re-paid on every dial.
+	quicVersions map[net.Destination]*atomic.Int32
+	cleanup      *task.Periodic
 }
 
 func isActive(s *quic.Conn) bool {
@@ -111,8 +116,16 @@ func (s *clientConnections) openConnection(ctx context.Context, destAddr net.Add
 	if s.conns == nil {
 		s.conns = make(map[net.Destination][]*connectionContext)
 	}
+	if s.quicVersions == nil {
+		s.quicVersions = make(map[net.Destination]*atomic.Int32)
+	}
 
 	dest := net.DestinationFromAddr(destAddr)
+	quicVersion := s.quicVersions[dest]
+	if quicVersion == nil {
+		quicVersion = new(atomic.Int32)
+		s.quicVersions[dest] = quicVersion
+	}
 
 	var conns []*connectionContext
 	if s, found := s.conns[dest]; found {
@@ -144,6 +157,8 @@ func (s *clientConnections) openConnection(ctx context.Context, destAddr net.Add
 		HandshakeIdleTimeout: 8 * time.Second,
 		MaxIdleTimeout:       300 * time.Second,
 	}
+	// Versions is set per attempt by quicdial.Dial below, which prefers v2 and
+	// falls back to v1.
 
 	var udpConn *net.UDPConn
 	switch conn := rawConn.(type) {
@@ -167,7 +182,10 @@ func (s *clientConnections) openConnection(ctx context.Context, destAddr net.Add
 		ConnectionIDLength: 12,
 		Conn:               sysConn,
 	}
-	conn, err := tr.Dial(context.Background(), destAddr, tlsConfig.GetTLSConfig(tls.WithDestination(dest)), quicConfig)
+	conn, err := quicdial.Dial(ctx, quicConfig, quicdial.Plain, quicVersion,
+		func(cfg *quic.Config) (*quic.Conn, error) {
+			return tr.Dial(context.Background(), destAddr, tlsConfig.GetTLSConfig(tls.WithDestination(dest)), cfg)
+		})
 	if err != nil {
 		sysConn.Close()
 		return nil, err
