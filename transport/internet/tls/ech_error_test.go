@@ -96,7 +96,8 @@ func TestRefineECHErrorRecognisesMaskedRejections(t *testing.T) {
 	masked := []error{
 		// uTLS validates the rejection cert against the inner name
 		&tls.CertificateVerificationError{Err: errors.New(
-			"x509: certificate is valid for cloudflare-ech.com, *.cloudflare-ech.com, not example.com")},
+			"x509: certificate is valid for cloudflare-ech.com, *.cloudflare-ech.com, not example.com",
+		)},
 		// ALPN negotiated from the wider outer hello (ws/httpupgrade)
 		errors.New("tls: server selected unadvertised ALPN protocol"),
 		errors.New("tls: server advertised unrequested ALPN extension"),
@@ -121,7 +122,8 @@ func TestRefineECHErrorRecognisesMaskedRejections(t *testing.T) {
 func TestRefineECHErrorKeepsGenuineCertErrors(t *testing.T) {
 	list, _ := bogusECHConfigList("cloudflare-ech.com")
 	genuine := &tls.CertificateVerificationError{Err: errors.New(
-		"x509: certificate has expired or is not yet valid")}
+		"x509: certificate has expired or is not yet valid",
+	)}
 	if got := RefineECHError(echTestConfig(list, "k"), nil, genuine); got != error(genuine) {
 		t.Errorf("genuine certificate error was misreported as an ECH rejection: %v", got)
 	}
@@ -228,7 +230,8 @@ func TestRefineECHErrorUsesConnectionState(t *testing.T) {
 	list, _ := bogusECHConfigList("cover.example")
 	// A self-signed server produces this, and it names nothing we could match on.
 	unknownCA := &tls.CertificateVerificationError{Err: errors.New(
-		"x509: certificate signed by unknown authority")}
+		"x509: certificate signed by unknown authority",
+	)}
 
 	// ECH refused: recognised, even though the message mentions no name.
 	got := RefineECHError(echTestConfig(list, ""), fakeECHConn{accepted: false}, unknownCA)
