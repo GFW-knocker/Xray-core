@@ -81,7 +81,7 @@ func ApplyECH(c *Config, config *tls.Config) error {
 			rememberECHCacheKey(config, ECHCacheKey(server, publicName, sockopt))
 			ECHConfig, err = queryECHConfig(server, publicName, sockopt,
 				func() ([]byte, uint32, error) {
-					return echProbe(context.Background(), hostPort, publicName, sockopt, fingerprint, rootCAs)
+					return echProbe(context.Background(), hostPort, publicName, sockopt, fingerprint, rootCAs, c.AllowInsecure)
 				})
 			if err != nil {
 				return errors.New("Failed to obtain ECH config by probing ", hostPort, " as ", publicName).Base(err)
@@ -426,6 +426,12 @@ func ConvertToGoECHKeys(data []byte) ([]tls.EncryptedClientHelloKey, error) {
 		keys = append(keys, tls.EncryptedClientHelloKey{
 			Config:     config,
 			PrivateKey: sk,
+			// Answer a client whose config is stale with the current one, the
+			// way Cloudflare does. Without this the server refuses the ECH but
+			// never says what would work, so a key rotation breaks every client
+			// until each config is updated by hand. The value handed out is the
+			// public half, the same bytes that go in a DNS record.
+			SendAsRetry: true,
 		})
 	}
 	return keys, nil

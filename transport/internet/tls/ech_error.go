@@ -9,6 +9,7 @@ import (
 	utls "github.com/refraction-networking/utls"
 
 	"github.com/GFW-knocker/Xray-core/common/errors"
+	"github.com/GFW-knocker/Xray-core/common/net"
 )
 
 // rememberECHCacheKey records which GlobalECHConfigCache entry fed this
@@ -82,6 +83,20 @@ func echPublicNameFromConfigList(list []byte) string {
 	return string(s[1 : 1+nameLen])
 }
 
+// echStateReporter is implemented by both TLS wrappers in this package.
+type echStateReporter interface{ ECHAccepted() bool }
+
+// echAcceptedOn asks the connection whether ECH was accepted. Both stacks fill
+// this in during the handshake, before certificate verification, so it is still
+// meaningful on a connection whose handshake then failed. known is false when
+// there is no connection to ask.
+func echAcceptedOn(conn net.Conn) (accepted bool, known bool) {
+	if r, ok := conn.(echStateReporter); ok {
+		return r.ECHAccepted(), true
+	}
+	return false, false
+}
+
 // echRejectedByServer reports whether err is a handshake failure caused by the
 // server refusing our ECH config, and returns the retry_configs when the TLS
 // stack managed to surface them.
@@ -90,13 +105,18 @@ func echPublicNameFromConfigList(list []byte) string {
 // rather than clean signals:
 //
 //   - ECHRejectionError, the clean signal. crypto/tls always produces it.
-//   - A certificate error naming our own public name. uTLS validates the
-//     rejection certificate against the inner server name instead of the outer
-//     public name, so it fails here before it can construct ECHRejectionError.
+//   - A certificate error. uTLS validates the rejection certificate against the
+//     inner server name instead of the outer public name, so it fails there
+//     before it can construct ECHRejectionError.
 //   - An ALPN mismatch. On rejection the server negotiates from ClientHelloOuter,
 //     whose ALPN comes from the uTLS parrot (h2, http/1.1) and can be wider than
 //     the config's own list -- WebSocket and HTTPUpgrade narrow it to http/1.1.
-func echRejectedByServer(config *tls.Config, err error) (retryConfigs []byte, rejected bool) {
+//
+// The last two are told apart from unrelated failures by asking the connection
+// whether ECH was accepted. Only those two error shapes are considered, so a
+// failure that happened before the server was even heard from -- a reset, a
+// timeout -- is never mistaken for a rejection just because no ECH was accepted.
+func echRejectedByServer(config *tls.Config, conn net.Conn, err error) (retryConfigs []byte, rejected bool) {
 	var goRejection *tls.ECHRejectionError
 	if goerrors.As(err, &goRejection) {
 		return goRejection.RetryConfigList, true
@@ -106,13 +126,22 @@ func echRejectedByServer(config *tls.Config, err error) (retryConfigs []byte, re
 		return uRejection.RetryConfigList, true
 	}
 
+	echAccepted, known := echAcceptedOn(conn)
+	if known && echAccepted {
+		// The server took our ECH, so whatever went wrong afterwards is a real
+		// problem of its own and must be reported as itself.
+		return nil, false
+	}
+
 	msg := err.Error()
 	var goCertErr *tls.CertificateVerificationError
 	var uCertErr *utls.CertificateVerificationError
 	if goerrors.As(err, &goCertErr) || goerrors.As(err, &uCertErr) {
-		// Only claim this is an ECH rejection when the certificate is actually
-		// the one for our public name, so a genuine certificate problem on an
-		// ECH-accepted connection is still reported as itself.
+		if known {
+			return nil, true // ECH was not accepted, and a certificate arrived
+		}
+		// No connection to ask: fall back to spotting our own public name in the
+		// message, which is the shape a publicly trusted server produces.
 		if name := echPublicNameFromConfigList(config.EncryptedClientHelloConfigList); name != "" &&
 			strings.Contains(msg, name) {
 			return nil, true
@@ -134,7 +163,11 @@ func echRejectedByServer(config *tls.Config, err error) (retryConfigs []byte, re
 //
 // It returns err unchanged for connections that do not use ECH, and for
 // failures unrelated to it.
-func RefineECHError(config *tls.Config, err error) error {
+//
+// conn is the TLS connection whose handshake failed, and may be nil; when given
+// it is asked whether ECH was accepted, which is exact where inspecting the
+// error message is only a guess.
+func RefineECHError(config *tls.Config, conn net.Conn, err error) error {
 	if err == nil || config == nil || len(config.EncryptedClientHelloConfigList) == 0 {
 		return err
 	}
@@ -148,7 +181,7 @@ func RefineECHError(config *tls.Config, err error) error {
 			"(DNS server reachable? probe target reachable?)").Base(err)
 	}
 
-	retryConfigs, rejected := echRejectedByServer(config, err)
+	retryConfigs, rejected := echRejectedByServer(config, conn, err)
 	if !rejected {
 		return err
 	}

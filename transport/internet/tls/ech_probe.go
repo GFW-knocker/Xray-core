@@ -159,8 +159,14 @@ func looksLikeECHConfigList(b []byte) bool {
 // certificate is validated against publicName, so an attacker who cannot obtain
 // that certificate cannot feed us a key. That makes this no weaker than DoH, and
 // strictly stronger than the plain udp:// path.
+// allowInsecure drops the certificate check on the probe connection, for a
+// self-hosted ECH server whose certificate is self-signed. Note this makes the
+// probe spoofable: an attacker who can intercept it can hand over an ECH key
+// they own, and the real SNI then gets sealed to that key and put on the wire
+// where they can read it -- the same exposure as a plaintext udp:// lookup. It
+// is honoured only because the outbound already opted into allowInsecure.
 func echProbe(ctx context.Context, hostPort string, publicName string, sockopt *internet.SocketConfig,
-	fingerprint *utls.ClientHelloID, rootCAs *x509.CertPool,
+	fingerprint *utls.ClientHelloID, rootCAs *x509.CertPool, allowInsecure bool,
 ) ([]byte, uint32, error) {
 	configList, err := bogusECHConfigList(publicName)
 	if err != nil {
@@ -185,6 +191,16 @@ func echProbe(ctx context.Context, hostPort string, publicName string, sockopt *
 		conn.SetDeadline(deadline)
 	}
 
+	// The rejection branch of both stacks ignores InsecureSkipVerify, so this
+	// hook is the only thing that actually relaxes the check there. Returning
+	// nil accepts whatever certificate the server presented.
+	var skipVerify func(state utls.ConnectionState) error
+	var skipVerifyGo func(state tls.ConnectionState) error
+	if allowInsecure {
+		skipVerify = func(utls.ConnectionState) error { return nil }
+		skipVerifyGo = func(tls.ConnectionState) error { return nil }
+	}
+
 	var retryConfigs []byte
 	if fingerprint != nil {
 		uConn := utls.UClient(conn, &utls.Config{
@@ -202,7 +218,9 @@ func echProbe(ctx context.Context, hostPort string, publicName string, sockopt *
 			// is a full WebPKI validation against publicName, not a relaxation:
 			// InsecureSkipVerify is deliberately left off, and would not help here
 			// anyway because the rejection branch bypasses it.
-			InsecureServerNameToVerify: publicName,
+			InsecureServerNameToVerify:          publicName,
+			InsecureSkipVerify:                  allowInsecure,
+			EncryptedClientHelloRejectionVerify: skipVerify,
 		}, *fingerprint)
 		err = uConn.HandshakeContext(ctx)
 		var rejected *utls.ECHRejectionError
@@ -213,11 +231,13 @@ func echProbe(ctx context.Context, hostPort string, publicName string, sockopt *
 		// "unsafe" fingerprint: crypto/tls already checks the rejection
 		// certificate against the outer public name, so there is nothing to fix.
 		tlsConn := tls.Client(conn, &tls.Config{
-			ServerName:                     publicName,
-			MinVersion:                     tls.VersionTLS13,
-			NextProtos:                     []string{"h2", "http/1.1"},
-			RootCAs:                        rootCAs,
-			EncryptedClientHelloConfigList: configList,
+			ServerName:                          publicName,
+			MinVersion:                          tls.VersionTLS13,
+			NextProtos:                          []string{"h2", "http/1.1"},
+			RootCAs:                             rootCAs,
+			EncryptedClientHelloConfigList:      configList,
+			InsecureSkipVerify:                  allowInsecure,
+			EncryptedClientHelloRejectionVerify: skipVerifyGo,
 		})
 		err = tlsConn.HandshakeContext(ctx)
 		var rejected *tls.ECHRejectionError

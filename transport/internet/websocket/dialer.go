@@ -97,7 +97,7 @@ func dialWebSocket(ctx context.Context, dest net.Destination, streamSettings *in
 				// TLS and apply the handshake
 				cn := tls.UClient(pconn, tlsConfig, fingerprint).(*tls.UConn)
 				if err := cn.WebsocketHandshakeContext(ctx); err != nil {
-					err = tls.RefineECHError(tlsConfig, err)
+					err = tls.RefineECHError(tlsConfig, cn, err)
 					errors.LogErrorInner(ctx, err, "failed to dial to "+addr)
 					return nil, err
 				}

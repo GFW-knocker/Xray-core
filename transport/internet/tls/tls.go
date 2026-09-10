@@ -59,6 +59,13 @@ func (c *Conn) NegotiatedProtocol() string {
 	return state.NegotiatedProtocol
 }
 
+// ECHAccepted reports whether the server accepted our ECH. It is meaningful
+// after a failed handshake too, which is what lets RefineECHError tell an ECH
+// rejection apart from an unrelated certificate problem.
+func (c *Conn) ECHAccepted() bool {
+	return c.ConnectionState().ECHAccepted
+}
+
 // Client initiates a TLS client handshake on the given connection.
 func Client(c net.Conn, config *tls.Config) net.Conn {
 	tlsConn := tls.Client(c, config)
@@ -142,6 +149,11 @@ func (c *UConn) WebsocketHandshakeContext(ctx context.Context) error {
 func (c *UConn) NegotiatedProtocol() string {
 	state := c.ConnectionState()
 	return state.NegotiatedProtocol
+}
+
+// ECHAccepted reports whether the server accepted our ECH. See Conn.ECHAccepted.
+func (c *UConn) ECHAccepted() bool {
+	return c.ConnectionState().ECHAccepted
 }
 
 func UClient(c net.Conn, config *tls.Config, fingerprint *utls.ClientHelloID) net.Conn {

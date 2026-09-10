@@ -88,7 +88,7 @@ func Dial(ctx context.Context, dest net.Destination, streamSettings *internet.Me
 			if isFromMitmVerify {
 				return nil, errors.New("MITM freedom RAW TLS: failed to verify Domain Fronting certificate from " + mitmServerName).Base(err).AtWarning()
 			}
-			return nil, tls.RefineECHError(tlsConfig, err)
+			return nil, tls.RefineECHError(tlsConfig, conn, err)
 		}
 		negotiatedProtocol := conn.(tls.Interface).NegotiatedProtocol()
 		if isFromMitmAlpn && !mitmAlpn11 && negotiatedProtocol != "h2" {

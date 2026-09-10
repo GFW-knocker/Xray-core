@@ -41,23 +41,23 @@ func TestRefineECHErrorPassthrough(t *testing.T) {
 	list, _ := bogusECHConfigList("cloudflare-ech.com")
 
 	// nil error, no ECH, and unrelated failures must all come back untouched.
-	if got := RefineECHError(echTestConfig(list, "k"), nil); got != nil {
+	if got := RefineECHError(echTestConfig(list, "k"), nil, nil); got != nil {
 		t.Error("nil error was rewritten")
 	}
-	if got := RefineECHError(&tls.Config{}, boring); got != boring {
+	if got := RefineECHError(&tls.Config{}, nil, boring); got != boring {
 		t.Error("non-ECH config had its error rewritten")
 	}
-	if got := RefineECHError(nil, boring); got != boring {
+	if got := RefineECHError(nil, nil, boring); got != boring {
 		t.Error("nil config had its error rewritten")
 	}
-	if got := RefineECHError(echTestConfig(list, "k"), boring); got != boring {
+	if got := RefineECHError(echTestConfig(list, "k"), nil, boring); got != boring {
 		t.Error("unrelated error was rewritten")
 	}
 }
 
 func TestRefineECHErrorFailClosed(t *testing.T) {
 	cfg := echTestConfig(failClosedECHConfig, "")
-	got := RefineECHError(cfg, errors.New("tls: malformed ECHConfigList"))
+	got := RefineECHError(cfg, nil, errors.New("tls: malformed ECHConfigList"))
 	if !strings.Contains(got.Error(), "no ECH config could be obtained") {
 		t.Errorf("placeholder not explained, got: %v", got)
 	}
@@ -75,7 +75,7 @@ func TestRefineECHErrorRejectionInvalidatesCache(t *testing.T) {
 
 	list, _ := bogusECHConfigList("cloudflare-ech.com")
 	cfg := echTestConfig(list, key)
-	got := RefineECHError(cfg, &tls.ECHRejectionError{RetryConfigList: list})
+	got := RefineECHError(cfg, nil, &tls.ECHRejectionError{RetryConfigList: list})
 
 	if !strings.Contains(got.Error(), "ECH rejected") {
 		t.Errorf("rejection not explained, got: %v", got)
@@ -106,7 +106,7 @@ func TestRefineECHErrorRecognisesMaskedRejections(t *testing.T) {
 		cache.configRecord.Store(&echConfigRecord{config: []byte("stale"), expire: time.Now().Add(time.Hour)})
 		GlobalECHConfigCache.Store(key, cache)
 
-		got := RefineECHError(echTestConfig(list, key), err)
+		got := RefineECHError(echTestConfig(list, key), nil, err)
 		if !strings.Contains(got.Error(), "ECH rejected") {
 			t.Errorf("masked rejection %v not recognised, got: %v", err, got)
 		}
@@ -122,14 +122,14 @@ func TestRefineECHErrorKeepsGenuineCertErrors(t *testing.T) {
 	list, _ := bogusECHConfigList("cloudflare-ech.com")
 	genuine := &tls.CertificateVerificationError{Err: errors.New(
 		"x509: certificate has expired or is not yet valid")}
-	if got := RefineECHError(echTestConfig(list, "k"), genuine); got != error(genuine) {
+	if got := RefineECHError(echTestConfig(list, "k"), nil, genuine); got != error(genuine) {
 		t.Errorf("genuine certificate error was misreported as an ECH rejection: %v", got)
 	}
 }
 
 func TestRefineECHErrorPinnedConfigCannotRefresh(t *testing.T) {
 	list, _ := bogusECHConfigList("cloudflare-ech.com")
-	got := RefineECHError(echTestConfig(list, ""), &tls.ECHRejectionError{})
+	got := RefineECHError(echTestConfig(list, ""), nil, &tls.ECHRejectionError{})
 	if !strings.Contains(got.Error(), "cannot refresh itself") {
 		t.Errorf("pinned-config case not explained, got: %v", got)
 	}
@@ -179,7 +179,7 @@ func TestECHSelfHealAgainstLiveServer(t *testing.T) {
 	}
 	t.Logf("raw stack error: %v", hsErr)
 
-	refined := RefineECHError(poisoned, hsErr)
+	refined := RefineECHError(poisoned, uc, hsErr)
 	t.Logf("refined error:   %v", refined)
 	if !strings.Contains(refined.Error(), "ECH rejected") {
 		t.Errorf("real-world rejection not recognised: %v", refined)
@@ -211,5 +211,55 @@ func TestECHSelfHealAgainstLiveServer(t *testing.T) {
 	}
 	if !strings.Contains(string(body), "sni=encrypted") {
 		t.Error("healed connection did not use ECH")
+	}
+}
+
+// fakeECHConn reports a fixed ECH acceptance state, standing in for a TLS
+// connection whose handshake has already failed.
+type fakeECHConn struct {
+	gonet.Conn
+	accepted bool
+}
+
+func (f fakeECHConn) ECHAccepted() bool { return f.accepted }
+
+// Asking the connection is exact where matching the error text was a guess.
+func TestRefineECHErrorUsesConnectionState(t *testing.T) {
+	list, _ := bogusECHConfigList("cover.example")
+	// A self-signed server produces this, and it names nothing we could match on.
+	unknownCA := &tls.CertificateVerificationError{Err: errors.New(
+		"x509: certificate signed by unknown authority")}
+
+	// ECH refused: recognised, even though the message mentions no name.
+	got := RefineECHError(echTestConfig(list, ""), fakeECHConn{accepted: false}, unknownCA)
+	if !strings.Contains(got.Error(), "ECH rejected") {
+		t.Errorf("rejection with an unknown-authority error not recognised: %v", got)
+	}
+
+	// ECH accepted: the very same error is a real certificate problem.
+	got = RefineECHError(echTestConfig(list, ""), fakeECHConn{accepted: true}, unknownCA)
+	if got != error(unknownCA) {
+		t.Errorf("genuine certificate error on an ECH-accepted connection was rewritten: %v", got)
+	}
+
+	// Without a connection the old text matching still applies, and this
+	// message does not mention our public name, so it stays untouched.
+	if got := RefineECHError(echTestConfig(list, ""), nil, unknownCA); got != error(unknownCA) {
+		t.Errorf("no-connection fallback misfired: %v", got)
+	}
+}
+
+// A failure before the server was even heard from must never be blamed on ECH,
+// even though ECHAccepted is false for it too.
+func TestRefineECHErrorIgnoresEarlyFailures(t *testing.T) {
+	list, _ := bogusECHConfigList("cover.example")
+	for _, err := range []error{
+		errors.New("connection reset by peer"),
+		errors.New("i/o timeout"),
+		errors.New("EOF"),
+	} {
+		if got := RefineECHError(echTestConfig(list, ""), fakeECHConn{accepted: false}, err); got != err {
+			t.Errorf("early failure %v was misreported as an ECH rejection: %v", err, got)
+		}
 	}
 }
