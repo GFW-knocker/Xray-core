@@ -25,10 +25,14 @@ const (
 	// it advertises the same one, so it is the sensible default target.
 	echProbeDefaultName = "cloudflare-ech.com"
 	echProbeDefaultPort = "443"
-	// A probed config carries no DNS TTL, so pick one. Cloudflare keeps older
-	// keys working alongside new ones, and a stale config self-heals: the next
-	// probe runs as soon as this expires.
-	echProbeTTL     uint32 = 3600
+	// A probed config carries no DNS TTL, so pick one. Measured against
+	// Cloudflare: the key advertised in DNS rotates roughly hourly, and retired
+	// keys keep working for a while afterwards -- but not everywhere at once. A
+	// key ~80 minutes old was still accepted on two edge IPs and already refused
+	// on a third, so retirement is staggered per datacenter. 30 minutes keeps a
+	// comfortable margin inside that window; RefineECHError handles the rest by
+	// dropping the entry the moment a server actually refuses it.
+	echProbeTTL     uint32 = 1800
 	echProbeTimeout        = 12 * time.Second
 
 	// draft-ietf-tls-esni-13 and later

@@ -141,7 +141,7 @@ func createHTTPClient(dest net.Destination, streamSettings *internet.MemoryStrea
 			if fingerprint := tls.GetFingerprint(tlsConfig.Fingerprint); fingerprint != nil {
 				conn = tls.UClient(conn, gotlsConfig, fingerprint)
 				if err := conn.(*tls.UConn).HandshakeContext(ctxInner); err != nil {
-					return nil, err
+					return nil, tls.RefineECHError(gotlsConfig, err)
 				}
 			} else {
 				conn = tls.Client(conn, gotlsConfig)

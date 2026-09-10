@@ -357,6 +357,11 @@ type RandCarrier struct {
 	RootCAs              *x509.CertPool
 	VerifyPeerCertByName []string
 	PinnedPeerCertSha256 [][]byte
+	// ECHCacheKey identifies the GlobalECHConfigCache entry the ECH config on
+	// this tls.Config came from, so RefineECHError can drop it when the server
+	// tells us it is stale. Empty for a pinned base64 config, which has no
+	// cache entry and nothing to refresh.
+	ECHCacheKey string
 }
 
 func (r *RandCarrier) Read(p []byte) (n int, err error) {

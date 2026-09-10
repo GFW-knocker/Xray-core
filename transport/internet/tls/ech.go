@@ -27,6 +27,11 @@ import (
 	"golang.org/x/crypto/cryptobyte"
 )
 
+// failClosedECHConfig is a deliberately malformed ECHConfigList. The TLS stack
+// rejects it while parsing, so a handshake fails locally instead of silently
+// falling back to a plaintext SNI when no real config could be obtained.
+var failClosedECHConfig = []byte{1, 1, 4, 5, 1, 4}
+
 func ApplyECH(c *Config, config *tls.Config) error {
 	var ECHConfig []byte
 	var err error
@@ -57,7 +62,7 @@ func ApplyECH(c *Config, config *tls.Config) error {
 			// len(ECHConfig) == 0 covers both a failed query and a query that
 			// succeeded but carried no ECH record.
 			if len(ECHConfig) == 0 {
-				ECHConfig = []byte{1, 1, 4, 5, 1, 4}
+				ECHConfig = failClosedECHConfig
 			}
 			config.EncryptedClientHelloConfigList = ECHConfig
 		}()
@@ -72,7 +77,9 @@ func ApplyECH(c *Config, config *tls.Config) error {
 			}
 			fingerprint := GetFingerprint(c.Fingerprint)
 			sockopt := c.EchSocketSettings
-			ECHConfig, err = queryECHConfig(echProbeScheme+"://"+hostPort, publicName, sockopt,
+			server := echProbeScheme + "://" + hostPort
+			rememberECHCacheKey(config, ECHCacheKey(server, publicName, sockopt))
+			ECHConfig, err = queryECHConfig(server, publicName, sockopt,
 				func() ([]byte, uint32, error) {
 					return echProbe(context.Background(), hostPort, publicName, sockopt, fingerprint, rootCAs)
 				})
@@ -95,6 +102,7 @@ func ApplyECH(c *Config, config *tls.Config) error {
 			if nameToQuery == "" {
 				return errors.New("Using DNS for ECH Config needs serverName or use Server format example.com+https://1.1.1.1/dns-query")
 			}
+			rememberECHCacheKey(config, ECHCacheKey(DNSServer, nameToQuery, c.EchSocketSettings))
 			ECHConfig, err = QueryRecord(nameToQuery, DNSServer, c.EchSocketSettings)
 			if err != nil {
 				return errors.New("Failed to query ECH DNS record for domain: ", nameToQuery, " at server: ", DNSServer).Base(err)
