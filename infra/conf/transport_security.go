@@ -18,6 +18,10 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// realityFallbackFingerprint replaces a fingerprint a current REALITY server
+// can never verify. It must itself offer an X25519MLKEM768 key share.
+const realityFallbackFingerprint = "chrome"
+
 type LimitFallback struct {
 	AfterBytes       uint64
 	BytesPerSec      uint64
@@ -181,8 +185,23 @@ func (c *REALITYConfig) Build() (proto.Message, error) {
 		if config.Fingerprint == "unsafe" || config.Fingerprint == "hellogolang" {
 			return nil, errors.New(`invalid "fingerprint": `, config.Fingerprint)
 		}
-		if tls.GetFingerprint(config.Fingerprint) == nil {
+		fingerprint := tls.GetFingerprint(config.Fingerprint)
+		if fingerprint == nil {
 			return nil, errors.New(`unknown "fingerprint": `, config.Fingerprint)
+		}
+		// A fingerprint whose ClientHello has no X25519MLKEM768 key share can
+		// never be verified by a current REALITY server: every connection falls
+		// through to the decoy site. Substitute one that works instead of
+		// breaking the config. Checked by inspection rather than against a list
+		// of names, because "random" is drawn from ModernFingerprints at startup
+		// and can land either way on different restarts, and a uTLS bump moves
+		// presets in and out of the set. REALITY only -- plain TLS keeps
+		// honouring every fingerprint.
+		if !tls.GuaranteesX25519MLKEM768(fingerprint) {
+			errors.LogWarning(context.Background(), `REALITY: fingerprint "`, config.Fingerprint,
+				`" offers no X25519MLKEM768 key share, which the REALITY server now requires, `,
+				`so it can never be verified. Using "`, realityFallbackFingerprint, `" instead.`)
+			config.Fingerprint = realityFallbackFingerprint
 		}
 		if len(c.ServerNames) != 0 {
 			return nil, errors.New(`non-empty "serverNames", please use "serverName" instead`)

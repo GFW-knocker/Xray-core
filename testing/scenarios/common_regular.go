@@ -8,19 +8,31 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"sync"
+)
+
+// Tests that start several servers at once call BuildXray concurrently, so the
+// build is guarded: without it every caller sees the os.Stat miss and they race
+// to write the same output path, which fails outright on Windows.
+var (
+	buildXrayOnce sync.Once
+	buildXrayErr  error
 )
 
 func BuildXray() error {
-	genTestBinaryPath()
-	if _, err := os.Stat(testBinaryPath); err == nil {
-		return nil
-	}
+	buildXrayOnce.Do(func() {
+		genTestBinaryPath()
+		if _, err := os.Stat(testBinaryPath); err == nil {
+			return
+		}
 
-	fmt.Printf("Building Xray into path (%s)\n", testBinaryPath)
-	cmd := exec.Command("go", "build", "-o="+testBinaryPath, GetSourcePath())
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+		fmt.Printf("Building Xray into path (%s)\n", testBinaryPath)
+		cmd := exec.Command("go", "build", "-o="+testBinaryPath, GetSourcePath())
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		buildXrayErr = cmd.Run()
+	})
+	return buildXrayErr
 }
 
 func RunXrayProtobuf(config []byte) *exec.Cmd {

@@ -7,18 +7,30 @@ import (
 	"bytes"
 	"os"
 	"os/exec"
+	"sync"
 
 	"github.com/GFW-knocker/Xray-core/common/uuid"
 )
 
-func BuildXray() error {
-	genTestBinaryPath()
-	if _, err := os.Stat(testBinaryPath); err == nil {
-		return nil
-	}
+// Tests that start several servers at once call BuildXray concurrently, so the
+// build is guarded: without it every caller sees the os.Stat miss and they race
+// to write the same output path, which fails outright on Windows.
+var (
+	buildXrayOnce sync.Once
+	buildXrayErr  error
+)
 
-	cmd := exec.Command("go", "test", "-tags", "coverage coveragemain", "-coverpkg", "github.com/GFW-knocker/Xray-core/...", "-c", "-o", testBinaryPath, GetSourcePath())
-	return cmd.Run()
+func BuildXray() error {
+	buildXrayOnce.Do(func() {
+		genTestBinaryPath()
+		if _, err := os.Stat(testBinaryPath); err == nil {
+			return
+		}
+
+		cmd := exec.Command("go", "test", "-tags", "coverage coveragemain", "-coverpkg", "github.com/GFW-knocker/Xray-core/...", "-c", "-o", testBinaryPath, GetSourcePath())
+		buildXrayErr = cmd.Run()
+	})
+	return buildXrayErr
 }
 
 func RunXrayProtobuf(config []byte) *exec.Cmd {
