@@ -312,6 +312,9 @@ func (c *MVLessOutboundConfig) Build() (proto.Message, error) {
 				if err := json.Unmarshal(rawUser, account); err != nil {
 					return nil, errors.New(`MVLESS users: invalid user`).Base(err)
 				}
+				// validateOutboundTransportSecurity needs to see these
+				c.Encryption = account.Encryption
+				c.Address = rec.Address
 				if account.Reverse != nil { // may not be reached: error json unmarshal
 					return nil, errors.New(`MVLESS users: please use simplified outbound's config style to use "reverse"`)
 				}

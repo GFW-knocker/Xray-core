@@ -41,7 +41,7 @@ PROTOC="${PROTOC:-protoc$EXE}"
 PROTOC_GEN_GO="${PROTOC_GEN_GO:-$(go env GOPATH)/bin/protoc-gen-go$EXE}"
 
 # Keep in step with GOFUMPT_VERSION in .github/workflows/test.yml.
-GOFUMPT_VERSION="${GOFUMPT_VERSION:-v0.10.0}"
+GOFUMPT_VERSION="${GOFUMPT_VERSION:-v0.12.0}"
 if [ -z "${GOFUMPT:-}" ]; then
 	# Prefer GOPATH/bin, where `go install` puts it, then fall back to PATH.
 	if [ -x "$(go env GOPATH)/bin/gofumpt$EXE" ]; then

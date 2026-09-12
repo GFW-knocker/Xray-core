@@ -24,7 +24,7 @@ require (
 	github.com/sagernet/sing-shadowsocks v0.2.7
 	github.com/stretchr/testify v1.12.1
 	github.com/vishvananda/netlink v1.3.1
-	github.com/xtls/reality v0.0.0-20260322125925-9234c772ba8f
+	github.com/xtls/reality v0.0.0-20260908062103-8cdf7bf9c7f0
 	go4.org/netipx v0.0.0-20231129151722-fdeea329fbba
 	golang.org/x/crypto v0.55.0
 	golang.org/x/exp v0.0.0-20240506185415-9bf2ced13842
@@ -33,11 +33,12 @@ require (
 	golang.org/x/sys v0.47.0
 	golang.zx2c4.com/wintun v0.0.0-20230126152724-0fa3db229ce2
 	golang.zx2c4.com/wireguard/windows v1.0.1
-	google.golang.org/grpc v1.83.1
+	google.golang.org/grpc v1.83.2
 	google.golang.org/protobuf v1.36.12
 	gvisor.dev/gvisor v0.0.0-20260122175437-89a5d21be8f0
 	h12.io/socks v1.0.3
 	lukechampine.com/blake3 v1.4.1
+	mvdan.cc/gofumpt v0.12.0
 )
 
 require (
@@ -51,7 +52,6 @@ require (
 	github.com/klauspost/compress v1.17.4 // indirect
 	github.com/klauspost/reedsolomon v1.12.0 // indirect
 	github.com/koron/go-ssdp v0.0.4 // indirect
-	github.com/kr/text v0.2.0 // indirect
 	github.com/libp2p/go-netroute v0.2.1 // indirect
 	github.com/pion/dtls/v3 v3.1.5 // indirect
 	github.com/pion/logging v0.2.4 // indirect
@@ -68,6 +68,7 @@ require (
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/text v0.41.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
+	golang.org/x/tools v0.49.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )

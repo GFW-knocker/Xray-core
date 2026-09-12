@@ -2,12 +2,15 @@
 package blackhole
 
 import (
+	"bytes"
 	"context"
+	"net/http"
 	"time"
 
 	"github.com/GFW-knocker/Xray-core/common"
 	"github.com/GFW-knocker/Xray-core/common/buf"
 	"github.com/GFW-knocker/Xray-core/common/dice"
+	"github.com/GFW-knocker/Xray-core/common/errors"
 	"github.com/GFW-knocker/Xray-core/common/net"
 	"github.com/GFW-knocker/Xray-core/common/session"
 	"github.com/GFW-knocker/Xray-core/common/signal"
@@ -17,14 +20,34 @@ import (
 
 // Handler is an outbound connection that silently swallow the entire payload.
 type Handler struct {
-	response ResponseConfig
+	response []byte
+}
+
+var http403response = http.Response{
+	StatusCode: 403,
+	ProtoMajor: 1,
+	ProtoMinor: 1,
+	Header: http.Header{
+		"Connection":    {"close"},
+		"Cache-Control": {"max-age=3600, public"},
+	},
 }
 
 // New creates a new blackhole handler.
 func New(ctx context.Context, config *Config) (*Handler, error) {
-	response, err := config.GetInternalResponse()
-	if err != nil {
-		return nil, err
+	response := []byte{}
+	if config.Response != nil {
+		switch config.Response.Type {
+		case "", "none":
+		case "http":
+			var data bytes.Buffer
+			common.Must(http403response.Write(&data))
+			response = data.Bytes()
+		case "custom":
+			response = config.Response.CustomResponseData
+		default:
+			return nil, errors.New("unknown blackhole response: " + config.Response.Type)
+		}
 	}
 	return &Handler{
 		response: response,
@@ -37,8 +60,10 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
 	ob := outbounds[len(outbounds)-1]
 	ob.Name = "blackhole"
 
-	nBytes := h.response.WriteTo(link.Writer)
-	if nBytes > 0 {
+	if len(h.response) > 0 {
+		mbc := buf.MultiBufferContainer{}
+		common.Must2(mbc.Write(h.response))
+		link.Writer.WriteMultiBuffer(mbc.MultiBuffer)
 		// Sleep a little here to make sure the response is sent to client.
 		time.Sleep(time.Second)
 	}

@@ -6,11 +6,13 @@ on:
     types: [opened, synchronize, reopened]
 
 # Pinned: gofumpt adds rules between releases, and @latest would turn any such
-# release into a spontaneous CI failure on unrelated PRs. Bump deliberately,
-# together with GOFUMPT_VERSION in infra/mvlessgen/sync-mvless.sh, and re-run
+# release into a spontaneous CI failure on unrelated PRs. Bump deliberately.
+# vformat now links mvdan.cc/gofumpt as a library, so go.mod is the source of
+# truth -- keep this and GOFUMPT_VERSION in infra/mvlessgen/sync-mvless.sh equal
+# to the mvdan.cc/gofumpt version in go.mod, then re-run
 # `go run ./infra/vformat/main.go -pwd ./`.
 env:
-  GOFUMPT_VERSION: v0.10.0
+  GOFUMPT_VERSION: v0.12.0
 
 jobs:
   check-assets:
@@ -74,9 +76,7 @@ jobs:
           check-latest: true
           cache: false
       - name: Check Format
-        run: |
-          go install -v mvdan.cc/gofumpt@${{ env.GOFUMPT_VERSION }}
-          go run ./infra/vformat/main.go -mode check -pwd ./
+        run: go run ./infra/vformat/main.go -mode check -pwd ./
 
   check-mvless:
     runs-on: ubuntu-latest
