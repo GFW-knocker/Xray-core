@@ -341,6 +341,7 @@ type NoiseItem struct {
 	Type      string          `json:"type"`
 	Packet    json.RawMessage `json:"packet"`
 	Delay     Int32Range      `json:"delay"`
+	Gen       string          `json:"gen"`
 }
 
 type NoiseMask struct {
@@ -349,23 +350,42 @@ type NoiseMask struct {
 }
 
 func (c *NoiseMask) Build() (proto.Message, error) {
-	for _, item := range c.Noise {
-		if len(item.Packet) > 0 && item.Rand.To > 0 {
-			return nil, errors.New("len(item.Packet) > 0 && item.Rand.To > 0")
-		}
-	}
-
 	noiseSlice := make([]*noise.Item, 0, len(c.Noise))
 	for _, item := range c.Noise {
+		// "packet" is a literal and "gen" is a named generator: both fill the
+		// head of the datagram, so only one of them can be given. "rand" then
+		// appends that many random bytes after whichever was used, which is how
+		// the wnoise "quic"/"quicv1" shape (header plus wpayloadsize) is
+		// spelled here.
+		if item.Gen != "" {
+			if len(item.Packet) > 0 {
+				return nil, errors.New(`noise item: "gen" and "packet" are mutually exclusive`)
+			}
+			if !noise.IsGenerator(item.Gen) {
+				return nil, errors.New(`noise item: unknown gen "`, item.Gen,
+					`", valid values: `, noise.GenQUIC, `, `, noise.GenQUICv1, `, `, noise.GenQUICInit)
+			}
+			// quicinit only primes a flow because it is a conformant 1200-byte
+			// Initial, so trailing bytes would destroy the one property it
+			// exists for. Refuse rather than silently ignore.
+			if noise.IsFixedSize(item.Gen) && item.Rand.To > 0 {
+				return nil, errors.New(`noise item: gen "`, item.Gen,
+					`" is a complete datagram of a fixed size, "rand" cannot be appended to it`)
+			}
+		}
 		if item.RandRange == nil {
 			item.RandRange = &Int32Range{From: 0, To: 255}
 		}
 		if item.RandRange.From < 0 || item.RandRange.To > 255 {
 			return nil, errors.New("invalid randRange")
 		}
-		var err error
-		if item.Packet, err = PraseByteSlice(item.Packet, item.Type); err != nil {
-			return nil, err
+		// "type" describes how "packet" is encoded, so it has nothing to parse
+		// when the head comes from a generator.
+		if item.Gen == "" {
+			var err error
+			if item.Packet, err = PraseByteSlice(item.Packet, item.Type); err != nil {
+				return nil, err
+			}
 		}
 		noiseSlice = append(noiseSlice, &noise.Item{
 			RandMin:      int64(item.Rand.From),
@@ -375,6 +395,7 @@ func (c *NoiseMask) Build() (proto.Message, error) {
 			Packet:       item.Packet,
 			DelayMin:     int64(item.Delay.From),
 			DelayMax:     int64(item.Delay.To),
+			Gen:          item.Gen,
 		})
 	}
 

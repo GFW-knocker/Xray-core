@@ -30,6 +30,7 @@ type Item struct {
 	Packet        []byte                 `protobuf:"bytes,5,opt,name=packet,proto3" json:"packet,omitempty"`
 	DelayMin      int64                  `protobuf:"varint,6,opt,name=delay_min,json=delayMin,proto3" json:"delay_min,omitempty"`
 	DelayMax      int64                  `protobuf:"varint,7,opt,name=delay_max,json=delayMax,proto3" json:"delay_max,omitempty"`
+	Gen           string                 `protobuf:"bytes,8,opt,name=gen,proto3" json:"gen,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -113,6 +114,13 @@ func (x *Item) GetDelayMax() int64 {
 	return 0
 }
 
+func (x *Item) GetGen() string {
+	if x != nil {
+		return x.Gen
+	}
+	return ""
+}
+
 type Config struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ResetMin      int64                  `protobuf:"varint,1,opt,name=reset_min,json=resetMin,proto3" json:"reset_min,omitempty"`
@@ -177,7 +185,7 @@ var File_transport_internet_finalmask_noise_config_proto protoreflect.FileDescri
 
 const file_transport_internet_finalmask_noise_config_proto_rawDesc = "" +
 	"\n" +
-	"/transport/internet/finalmask/noise/config.proto\x12'xray.transport.internet.finalmask.noise\"\xda\x01\n" +
+	"/transport/internet/finalmask/noise/config.proto\x12'xray.transport.internet.finalmask.noise\"\xec\x01\n" +
 	"\x04Item\x12\x19\n" +
 	"\brand_min\x18\x01 \x01(\x03R\arandMin\x12\x19\n" +
 	"\brand_max\x18\x02 \x01(\x03R\arandMax\x12$\n" +
@@ -185,7 +193,8 @@ const file_transport_internet_finalmask_noise_config_proto_rawDesc = "" +
 	"\x0erand_range_max\x18\x04 \x01(\x05R\frandRangeMax\x12\x16\n" +
 	"\x06packet\x18\x05 \x01(\fR\x06packet\x12\x1b\n" +
 	"\tdelay_min\x18\x06 \x01(\x03R\bdelayMin\x12\x1b\n" +
-	"\tdelay_max\x18\a \x01(\x03R\bdelayMax\"\x87\x01\n" +
+	"\tdelay_max\x18\a \x01(\x03R\bdelayMax\x12\x10\n" +
+	"\x03gen\x18\b \x01(\tR\x03gen\"\x87\x01\n" +
 	"\x06Config\x12\x1b\n" +
 	"\treset_min\x18\x01 \x01(\x03R\bresetMin\x12\x1b\n" +
 	"\treset_max\x18\x02 \x01(\x03R\bresetMax\x12C\n" +

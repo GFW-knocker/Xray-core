@@ -14,6 +14,7 @@ message Item {
     bytes packet = 5;
     int64 delay_min = 6;
     int64 delay_max = 7;
+    string gen = 8;
 }
 
 message Config {
