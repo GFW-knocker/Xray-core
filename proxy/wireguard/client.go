@@ -334,9 +334,8 @@ func (h *Handler) init(ctx context.Context) error {
 	// noise header []byte
 	var Wheader []byte = nil
 	Wnoise := h.conf.Wnoise
-	// Named presets are passed through to the device as-is; everything else is
-	// treated as a custom hex header. "quic" is QUIC v2, "quicv1" is QUIC v1.
-	if (Wnoise != "") && (Wnoise != "none") && (Wnoise != "quic") && (Wnoise != "quicv1") && (Wnoise != "random") {
+
+	if (Wnoise != "") && (Wnoise != "none") && (Wnoise != "quic") && (Wnoise != "quicv1") && (Wnoise != "quicinit") && (Wnoise != "random") {
 		if len(Wnoise)%2 != 0 {
 			Wnoise = Wnoise + "0"
 		}

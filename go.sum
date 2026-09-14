@@ -1,7 +1,7 @@
 cloud.google.com/go v0.26.0/go.mod h1:aQUYkXzVsufM+DwF1aE+0xfcU+56JwCaLick0ClmMTw=
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
-github.com/GFW-knocker/wireguard v1.0.7 h1:9EUNn8bP13DGeWDxdc6P7pLMzhqQpdUlleElBm1XUls=
-github.com/GFW-knocker/wireguard v1.0.7/go.mod h1:lkzRoCibuOeA2/KOpo1AnppBT+v1uY/NNH0Nc2uBsEM=
+github.com/GFW-knocker/wireguard v1.0.8 h1:6TWHVp/Xm6TRI4iHUCv7aPS8mXlTp6tMsk3xBHTW+tU=
+github.com/GFW-knocker/wireguard v1.0.8/go.mod h1:lkzRoCibuOeA2/KOpo1AnppBT+v1uY/NNH0Nc2uBsEM=
 github.com/andybalholm/brotli v1.0.6 h1:Yf9fFpf49Zrxb9NlQaluyE92/+X7UVHlhMNJN2sxfOI=
 github.com/andybalholm/brotli v1.0.6/go.mod h1:fO7iG3H7G2nSZ7m0zPUDn85XEX2GTukHGRSepvi9Eig=
 github.com/apernet/quic-go v0.61.1-0.20260806010916-184d081eef3e h1:5mgtR5gwIgBKMiGI1QdXldZZ+SNor06Nbu1wCBulQBg=
