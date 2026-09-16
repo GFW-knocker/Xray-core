@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"net/netip"
 	"strconv"
+	"sync/atomic"
 
 	"github.com/GFW-knocker/Xray-core/common/errors"
 	"github.com/GFW-knocker/Xray-core/common/net"
@@ -35,6 +36,10 @@ type Handler struct {
 	addresses  []netip.Addr
 	dnsServers []netip.Addr
 	mtu        int
+
+	// Which quicdial attempt last connected to this edge, so the version
+	// fallback is paid for once rather than on every dial.
+	quicVersion atomic.Int32
 }
 
 func NewClient(ctx context.Context, conf *Config) (*Handler, error) {
@@ -43,8 +48,12 @@ func NewClient(ctx context.Context, conf *Config) (*Handler, error) {
 	d := v.GetFeature(dns.ClientType()).(dns.Client)
 
 	// An outbound is always dispatched with stream settings, but asserting
-	// blindly turns a missing one into a panic that takes the process down.
+	// blindly turns a missing one into a panic that takes the process down. An
+	// empty one stands in so nothing downstream has to keep checking.
 	streamSettings, _ := session.StreamSettingsFromContext(ctx).(*internet.MemoryStreamConfig)
+	if streamSettings == nil {
+		streamSettings = &internet.MemoryStreamConfig{}
+	}
 
 	h := &Handler{
 		conf:           conf,
