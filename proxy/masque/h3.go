@@ -2,6 +2,7 @@ package masque
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -24,10 +25,38 @@ import (
 // and the control capsules travel on the request stream, both of which the one
 // RequestStream gives access to.
 type h3Tunnel struct {
-	stream  *http3.RequestStream
+	request *http3.RequestStream
 	conn    *quic.Conn
 	quicTr  *quic.Transport
 	pktConn net.PacketConn
+
+	// Reused by sendPacket, which only ever runs on the uplink goroutine.
+	frame []byte
+}
+
+// dialCarrier opens whichever carrier the configuration asks for.
+func (h *Handler) dialCarrier(ctx context.Context) (carrier, error) {
+	if h.conf.Transport == Config_H2 {
+		return h.dialH2(ctx)
+	}
+	return h.dialH3(ctx)
+}
+
+func (t *h3Tunnel) sendPacket(packet []byte) error {
+	t.frame = appendH3Datagram(t.frame[:0], packet)
+	return t.request.SendDatagram(t.frame)
+}
+
+func (t *h3Tunnel) receivePacket(ctx context.Context) ([]byte, error) {
+	return t.request.ReceiveDatagram(ctx)
+}
+
+func (t *h3Tunnel) hasDatagrams() bool { return true }
+
+func (t *h3Tunnel) stream() io.Reader { return t.request }
+
+func (t *h3Tunnel) setReadDeadline(deadline time.Time) error {
+	return t.request.SetReadDeadline(deadline)
 }
 
 // newConnectRequest builds the extended CONNECT (RFC 9220) that opens the
@@ -220,7 +249,7 @@ func (h *Handler) dialH3(ctx context.Context) (*h3Tunnel, error) {
 		tunnel.Close()
 		return nil, errors.New("masque: failed to open the request stream").Base(err)
 	}
-	tunnel.stream = stream
+	tunnel.request = stream
 
 	if err := stream.SendRequestHeader(request); err != nil {
 		tunnel.Close()
@@ -243,8 +272,8 @@ func (h *Handler) dialH3(ctx context.Context) (*h3Tunnel, error) {
 // Close tears the tunnel down from the top so the edge sees the stream end
 // before the connection disappears.
 func (t *h3Tunnel) Close() error {
-	if t.stream != nil {
-		t.stream.Close()
+	if t.request != nil {
+		t.request.Close()
 	}
 	if t.conn != nil {
 		t.conn.CloseWithError(0, "")

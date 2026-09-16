@@ -3,13 +3,13 @@ package masque
 import (
 	"context"
 	goerrors "errors"
+	"io"
 	"net/netip"
 	"sync"
 	"time"
 
 	"github.com/GFW-knocker/Xray-core/common/errors"
 	"github.com/apernet/quic-go"
-	"github.com/apernet/quic-go/quicvarint"
 )
 
 // addressWait bounds how long a tunnel waits for the edge to hand it an address
@@ -17,12 +17,29 @@ import (
 // own accord once the CONNECT is answered, so this is short.
 const addressWait = 10 * time.Second
 
+// carrier is what a tunnel moves its packets over. HTTP/3 has datagrams and
+// keeps the stream for control capsules; HTTP/2 has no datagrams, so packets
+// travel as DATAGRAM capsules on the stream with everything else.
+type carrier interface {
+	// sendPacket puts one IP packet on the wire, framed however this carrier
+	// frames packets.
+	sendPacket(packet []byte) error
+	// receivePacket returns the next packet. Only meaningful when hasDatagrams
+	// reports true.
+	receivePacket(ctx context.Context) ([]byte, error)
+	// hasDatagrams reports whether packets arrive outside the capsule stream.
+	hasDatagrams() bool
+	// stream is where capsules arrive.
+	stream() io.Reader
+	Close() error
+}
+
 // tunnel is a running MASQUE session: a netstack for the proxy to dial through,
 // a carrier moving that netstack's packets, and the loops joining the two.
 type tunnel struct {
 	device   *netTun
 	tnet     *Net
-	carrier  *h3Tunnel
+	carrier  carrier
 	capsules *capsuleReader
 	mtu      int
 
@@ -33,14 +50,14 @@ type tunnel struct {
 
 // startTunnel brings a session up far enough to carry traffic.
 func (h *Handler) startTunnel(ctx context.Context) (*tunnel, error) {
-	carrier, err := h.dialH3(ctx)
+	carrier, err := h.dialCarrier(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	// One reader for the life of the tunnel: it buffers, so reading the address
 	// with a second one would swallow whatever it read past the first capsule.
-	capsules := newCapsuleReader(carrier.stream)
+	capsules := newCapsuleReader(carrier.stream())
 
 	addresses := h.addresses
 	if len(addresses) == 0 {
@@ -67,7 +84,9 @@ func (h *Handler) startTunnel(ctx context.Context) (*tunnel, error) {
 	t.ctx, t.cancel = context.WithCancel(context.Background())
 
 	go t.uplink()
-	go t.downlink()
+	if carrier.hasDatagrams() {
+		go t.downlink()
+	}
 	go t.control()
 
 	errors.LogInfo(ctx, "masque: tunnel carrying ", addresses, " at mtu ", h.mtu)
@@ -76,36 +95,53 @@ func (h *Handler) startTunnel(ctx context.Context) (*tunnel, error) {
 
 // readAssignedAddresses waits for the edge to say what address this tunnel
 // holds, for configurations that did not name one.
-func readAssignedAddresses(carrier *h3Tunnel, capsules *capsuleReader) ([]netip.Addr, error) {
-	// A deadline on the stream is what bounds the wait; the reader blocks in
-	// there and a partly read capsule does not matter, since a failure here
-	// tears the whole tunnel down.
-	carrier.stream.SetReadDeadline(time.Now().Add(addressWait))
-	defer carrier.stream.SetReadDeadline(time.Time{})
+func readAssignedAddresses(carrier carrier, capsules *capsuleReader) ([]netip.Addr, error) {
+	// The read is bounded from out here rather than with a deadline on the
+	// carrier: HTTP/2 runs its own read loop over the same connection, and a
+	// deadline meant for one capsule would take that down with it. On the
+	// timeout path the caller closes the carrier, which releases this reader.
+	type result struct {
+		addresses []netip.Addr
+		err       error
+	}
+	out := make(chan result, 1)
+	go func() {
+		for {
+			kind, value, err := capsules.next()
+			if err != nil {
+				out <- result{err: err}
+				return
+			}
+			if kind != capsuleAddressAssign {
+				continue
+			}
+			assigned, err := parseAddressAssign(value)
+			if err != nil {
+				out <- result{err: err}
+				return
+			}
+			addresses := make([]netip.Addr, 0, len(assigned))
+			for _, a := range assigned {
+				addresses = append(addresses, a.Prefix.Addr())
+			}
+			if len(addresses) > 0 {
+				out <- result{addresses: addresses}
+				return
+			}
+		}
+	}()
 
-	for {
-		kind, value, err := capsules.next()
-		if err != nil {
-			return nil, errors.New(
-				`masque: the edge assigned no address within `, addressWait,
-				` and the configuration named none; set "address" to the one the registration returned`,
-			).Base(err)
+	select {
+	case r := <-out:
+		if r.err != nil {
+			return nil, errors.New("masque: the edge sent no usable address").Base(r.err)
 		}
-		if kind != capsuleAddressAssign {
-			continue
-		}
-
-		assigned, err := parseAddressAssign(value)
-		if err != nil {
-			return nil, err
-		}
-		addresses := make([]netip.Addr, 0, len(assigned))
-		for _, a := range assigned {
-			addresses = append(addresses, a.Prefix.Addr())
-		}
-		if len(addresses) > 0 {
-			return addresses, nil
-		}
+		return r.addresses, nil
+	case <-time.After(addressWait):
+		return nil, errors.New(
+			`masque: the edge assigned no address within `, addressWait,
+			` and the configuration named none; set "address" to the one the registration returned`,
+		)
 	}
 }
 
@@ -114,7 +150,6 @@ func (t *tunnel) uplink() {
 	defer t.Close()
 
 	packet := make([]byte, t.mtu)
-	frame := make([]byte, 0, t.mtu+quicvarint.Len(connectIPContextID))
 	for {
 		n, err := t.device.ReadPacket(packet)
 		if err != nil {
@@ -122,8 +157,7 @@ func (t *tunnel) uplink() {
 			return
 		}
 
-		frame = appendH3Datagram(frame[:0], packet[:n])
-		if err := t.carrier.stream.SendDatagram(frame); err != nil {
+		if err := t.carrier.sendPacket(packet[:n]); err != nil {
 			var tooLarge *quic.DatagramTooLargeError
 			if goerrors.As(err, &tooLarge) {
 				// The path got smaller than the interface. Dropping one packet
@@ -142,7 +176,7 @@ func (t *tunnel) downlink() {
 	defer t.Close()
 
 	for {
-		payload, err := t.carrier.stream.ReceiveDatagram(t.ctx)
+		payload, err := t.carrier.receivePacket(t.ctx)
 		if err != nil {
 			errors.LogInfoInner(t.ctx, err, "masque: the tunnel stopped delivering packets")
 			return

@@ -215,13 +215,13 @@ func TestDialH3CarriesDatagrams(t *testing.T) {
 	defer tunnel.Close()
 
 	packet := ipv4Packet(42)
-	if err := tunnel.stream.SendDatagram(appendH3Datagram(nil, packet)); err != nil {
+	if err := tunnel.request.SendDatagram(appendH3Datagram(nil, packet)); err != nil {
 		t.Fatalf("SendDatagram: %v", err)
 	}
 
 	received, cancelReceive := context.WithTimeout(ctx, 10*time.Second)
 	defer cancelReceive()
-	payload, err := tunnel.stream.ReceiveDatagram(received)
+	payload, err := tunnel.request.ReceiveDatagram(received)
 	if err != nil {
 		t.Fatalf("ReceiveDatagram: %v", err)
 	}
