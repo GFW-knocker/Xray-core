@@ -41,6 +41,7 @@ import (
 	_ "github.com/GFW-knocker/Xray-core/proxy/freedom"
 	_ "github.com/GFW-knocker/Xray-core/proxy/http"
 	_ "github.com/GFW-knocker/Xray-core/proxy/loopback"
+	_ "github.com/GFW-knocker/Xray-core/proxy/masque"
 	_ "github.com/GFW-knocker/Xray-core/proxy/mvless/inbound"
 	_ "github.com/GFW-knocker/Xray-core/proxy/mvless/outbound"
 	_ "github.com/GFW-knocker/Xray-core/proxy/shadowsocks"

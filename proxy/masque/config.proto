@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+package xray.proxy.masque;
+option csharp_namespace = "Xray.Proxy.Masque";
+option go_package = "github.com/GFW-knocker/Xray-core/proxy/masque";
+option java_package = "com.xray.proxy.masque";
+option java_multiple_files = true;
+
+// Config is an outbound that carries traffic over MASQUE, an IP tunnel built on
+// HTTP extended CONNECT (RFC 9220) with the packets themselves in HTTP
+// datagrams (RFC 9297) or DATAGRAM capsules (RFC 9484).
+//
+// Only what MASQUE itself needs lives here. The TLS of the connection
+// underneath, which is server name, ECH, certificate pinning and fingerprint,
+// comes from streamSettings the way it does for every other outbound, and the
+// socket options, dialerProxy chaining and udpmasks come from there too.
+message Config {
+  enum DomainStrategy {
+    FORCE_IP = 0;
+    FORCE_IP4 = 1;
+    FORCE_IP6 = 2;
+    FORCE_IP46 = 3;
+    FORCE_IP64 = 4;
+  }
+
+  enum Transport {
+    // Extended CONNECT over HTTP/3, packets in QUIC datagrams. The default.
+    H3 = 0;
+    // Extended CONNECT over HTTP/2, packets as DATAGRAM capsules on the request
+    // stream. For paths where UDP is unusable; TCP underneath means head-of-line
+    // blocking.
+    H2 = 1;
+  }
+
+  // The edge to reach, as "host:port".
+  string endpoint = 1;
+
+  // The addresses the tunnel holds locally, in CIDR or bare form. When empty the
+  // address the edge assigns over the tunnel is used instead.
+  repeated string address = 2;
+
+  // PKCS#8 PEM of the P-256 private key enrolled with the edge. The edge
+  // authorises by the public key registered against the account, so there is no
+  // certificate authority anywhere in this.
+  string private_key = 3;
+
+  // PEM of the self-signed certificate carrying that key. Regenerated from
+  // private_key when empty, which is the normal case.
+  string certificate = 4;
+
+  Transport transport = 5;
+
+  // The :authority and :path of the CONNECT request.
+  string authority = 6;
+  string path = 7;
+
+  // The :protocol of the extended CONNECT. Cloudflare's edge wants
+  // "cf-connect-ip" rather than RFC 9484's "connect-ip".
+  string connect_protocol = 8;
+
+  int32 mtu = 9;
+
+  // Resolvers to use through the tunnel, matching the WireGuard outbound's
+  // remoteDNS.
+  repeated string DNS = 10;
+  DomainStrategy domain_strategy = 11;
+}
