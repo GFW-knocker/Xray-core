@@ -64,4 +64,18 @@ message Config {
   // remoteDNS.
   repeated string DNS = 10;
   DomainStrategy domain_strategy = 11;
+
+  // Hex SHA-256 of the SubjectPublicKeyInfo of the edge certificates to accept.
+  //
+  // The edge cannot be verified the ordinary way: it serves a different
+  // certificate per SNI and some of them are self-signed, so a chain check
+  // fails on a connection that is perfectly good. Skipping verification instead
+  // would leave the tunnel open to anyone on the path, so the leaf's public key
+  // is pinned and the chain is what gets skipped.
+  //
+  // Left empty, the known Cloudflare keys are used. Note this pins the public
+  // key, not the certificate, so it survives the edge renewing a certificate for
+  // the same key; streamSettings' own pinnedPeerCertSha256 hashes the whole
+  // certificate and does not.
+  repeated string pinned_peer_public_key_sha256 = 12;
 }

@@ -160,8 +160,21 @@ type Config struct {
 	// remoteDNS.
 	DNS            []string              `protobuf:"bytes,10,rep,name=DNS,proto3" json:"DNS,omitempty"`
 	DomainStrategy Config_DomainStrategy `protobuf:"varint,11,opt,name=domain_strategy,json=domainStrategy,proto3,enum=xray.proxy.masque.Config_DomainStrategy" json:"domain_strategy,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Hex SHA-256 of the SubjectPublicKeyInfo of the edge certificates to accept.
+	//
+	// The edge cannot be verified the ordinary way: it serves a different
+	// certificate per SNI and some of them are self-signed, so a chain check
+	// fails on a connection that is perfectly good. Skipping verification instead
+	// would leave the tunnel open to anyone on the path, so the leaf's public key
+	// is pinned and the chain is what gets skipped.
+	//
+	// Left empty, the known Cloudflare keys are used. Note this pins the public
+	// key, not the certificate, so it survives the edge renewing a certificate for
+	// the same key; streamSettings' own pinnedPeerCertSha256 hashes the whole
+	// certificate and does not.
+	PinnedPeerPublicKeySha256 []string `protobuf:"bytes,12,rep,name=pinned_peer_public_key_sha256,json=pinnedPeerPublicKeySha256,proto3" json:"pinned_peer_public_key_sha256,omitempty"`
+	unknownFields             protoimpl.UnknownFields
+	sizeCache                 protoimpl.SizeCache
 }
 
 func (x *Config) Reset() {
@@ -271,11 +284,18 @@ func (x *Config) GetDomainStrategy() Config_DomainStrategy {
 	return Config_FORCE_IP
 }
 
+func (x *Config) GetPinnedPeerPublicKeySha256() []string {
+	if x != nil {
+		return x.PinnedPeerPublicKeySha256
+	}
+	return nil
+}
+
 var File_proxy_masque_config_proto protoreflect.FileDescriptor
 
 const file_proxy_masque_config_proto_rawDesc = "" +
 	"\n" +
-	"\x19proxy/masque/config.proto\x12\x11xray.proxy.masque\"\x93\x04\n" +
+	"\x19proxy/masque/config.proto\x12\x11xray.proxy.masque\"\xd5\x04\n" +
 	"\x06Config\x12\x1a\n" +
 	"\bendpoint\x18\x01 \x01(\tR\bendpoint\x12\x18\n" +
 	"\aaddress\x18\x02 \x03(\tR\aaddress\x12\x1f\n" +
@@ -289,7 +309,8 @@ const file_proxy_masque_config_proto_rawDesc = "" +
 	"\x03mtu\x18\t \x01(\x05R\x03mtu\x12\x10\n" +
 	"\x03DNS\x18\n" +
 	" \x03(\tR\x03DNS\x12Q\n" +
-	"\x0fdomain_strategy\x18\v \x01(\x0e2(.xray.proxy.masque.Config.DomainStrategyR\x0edomainStrategy\"\\\n" +
+	"\x0fdomain_strategy\x18\v \x01(\x0e2(.xray.proxy.masque.Config.DomainStrategyR\x0edomainStrategy\x12@\n" +
+	"\x1dpinned_peer_public_key_sha256\x18\f \x03(\tR\x19pinnedPeerPublicKeySha256\"\\\n" +
 	"\x0eDomainStrategy\x12\f\n" +
 	"\bFORCE_IP\x10\x00\x12\r\n" +
 	"\tFORCE_IP4\x10\x01\x12\r\n" +

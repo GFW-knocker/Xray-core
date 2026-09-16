@@ -134,6 +134,16 @@ func TestMasqueConfigRejectsBadInput(t *testing.T) {
 		{"mtu too small", &conf.MasqueConfig{Endpoint: "1.2.3.4:443", PrivateKey: good, MTU: 100}, "mtu"},
 		{"mtu too large", &conf.MasqueConfig{Endpoint: "1.2.3.4:443", PrivateKey: good, MTU: 70000}, "mtu"},
 		{"unknown domain strategy", &conf.MasqueConfig{Endpoint: "1.2.3.4:443", PrivateKey: good, DomainStrategy: "nope"}, "domain strategy"},
+		{
+			"pin is not hex",
+			&conf.MasqueConfig{Endpoint: "1.2.3.4:443", PrivateKey: good, PinnedPeerPublicKeySha256: []string{"nothex"}},
+			"not hex",
+		},
+		{
+			"pin is the wrong length",
+			&conf.MasqueConfig{Endpoint: "1.2.3.4:443", PrivateKey: good, PinnedPeerPublicKeySha256: []string{"aabbcc"}},
+			"bytes",
+		},
 	}
 
 	for _, c := range cases {

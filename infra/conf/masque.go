@@ -1,6 +1,8 @@
 package conf
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"strings"
 
 	"github.com/GFW-knocker/Xray-core/common/errors"
@@ -20,6 +22,8 @@ type MasqueConfig struct {
 	MTU             int32    `json:"mtu"`
 	DNS             []string `json:"remoteDNS"`
 	DomainStrategy  string   `json:"domainStrategy"`
+
+	PinnedPeerPublicKeySha256 []string `json:"pinnedPeerPublicKeySha256"`
 }
 
 func (c *MasqueConfig) Build() (proto.Message, error) {
@@ -74,6 +78,21 @@ func (c *MasqueConfig) Build() (proto.Message, error) {
 	}
 
 	config.DNS = c.DNS
+
+	// Checked here so a mistyped pin is reported with the rest of the config
+	// errors rather than as a handshake failure much later.
+	for _, pin := range c.PinnedPeerPublicKeySha256 {
+		raw, err := hex.DecodeString(pin)
+		if err != nil {
+			return nil, errors.New(`MASQUE "pinnedPeerPublicKeySha256" entry `, pin, " is not hex").Base(err)
+		}
+		if len(raw) != sha256.Size {
+			return nil, errors.New(
+				`MASQUE "pinnedPeerPublicKeySha256" entry `, pin, " is ", len(raw), " bytes, want ", sha256.Size,
+			)
+		}
+	}
+	config.PinnedPeerPublicKeySha256 = c.PinnedPeerPublicKeySha256
 
 	switch strings.ToLower(c.DomainStrategy) {
 	case "forceip", "":

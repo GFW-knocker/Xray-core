@@ -3,8 +3,12 @@ package masque
 import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	"crypto/rand"
+	gotls "crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
+	"math/big"
+	"time"
 
 	"github.com/GFW-knocker/Xray-core/common/errors"
 )
@@ -47,4 +51,44 @@ func ParsePrivateKey(text string) (*ecdsa.PrivateKey, error) {
 		return nil, errors.New("private key is on curve ", key.Curve.Params().Name, ", want P-256")
 	}
 	return key, nil
+}
+
+// certificateLifetime matches what the WARP client's own enrollment issues.
+const certificateLifetime = 365 * 24 * time.Hour
+
+// SelfSignedCertificate builds the client certificate for key.
+//
+// Nothing signs this but the key itself, and that is the whole design: the edge
+// never checks a chain, because the account registration already told it this
+// key's public half. The certificate is only the envelope TLS needs in order to
+// carry that key, so it is deliberately bare, the way the client this mimics
+// makes it: serial 0, no subject, no issuer, no extensions.
+//
+// The start time is backdated a little. The edge has no reason to look at these
+// dates, but a certificate that becomes valid at exactly the moment it is
+// presented is one clock skew away from being refused, and nothing is lost by
+// leaving room.
+func SelfSignedCertificate(key *ecdsa.PrivateKey) (gotls.Certificate, error) {
+	now := time.Now()
+	template := &x509.Certificate{
+		SerialNumber:       big.NewInt(0),
+		NotBefore:          now.Add(-5 * time.Minute),
+		NotAfter:           now.Add(certificateLifetime),
+		SignatureAlgorithm: x509.ECDSAWithSHA256,
+	}
+
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		return gotls.Certificate{}, errors.New("failed to build the client certificate").Base(err)
+	}
+	leaf, err := x509.ParseCertificate(der)
+	if err != nil {
+		return gotls.Certificate{}, errors.New("built a client certificate that will not parse").Base(err)
+	}
+
+	return gotls.Certificate{
+		Certificate: [][]byte{der},
+		PrivateKey:  key,
+		Leaf:        leaf,
+	}, nil
 }

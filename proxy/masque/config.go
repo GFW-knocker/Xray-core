@@ -9,6 +9,7 @@ const (
 	DefaultAuthority       = "cloudflareaccess.com"
 	DefaultPath            = "/"
 	DefaultConnectProtocol = "cf-connect-ip"
+	DefaultSNI             = "consumer-masque.cloudflareclient.com"
 )
 
 // DefaultMTU is deliberately conservative. Every inner IP packet has to fit in
