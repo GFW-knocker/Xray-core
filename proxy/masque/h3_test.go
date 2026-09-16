@@ -16,6 +16,7 @@ import (
 
 	xnet "github.com/GFW-knocker/Xray-core/common/net"
 	"github.com/GFW-knocker/Xray-core/transport/internet"
+	xtls "github.com/GFW-knocker/Xray-core/transport/internet/tls"
 	"github.com/apernet/quic-go/http3"
 )
 
@@ -274,5 +275,46 @@ func TestDialH3ReportsARefusedTunnel(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "refused the tunnel") {
 		t.Errorf("error is %q, want it to say the edge refused", err)
+	}
+}
+
+// The counterpart of refusing an unpinned edge: with allowInsecure set, the
+// same edge is accepted. The key it presented is reported in the log so it can
+// be pinned afterwards, which is how a rotated key is meant to be recovered.
+func TestDialH3AcceptsAnUnpinnedEdgeWhenAllowInsecure(t *testing.T) {
+	edge := startFakeEdge(t, DefaultConnectProtocol)
+	handler := handlerFor(t, edge)
+
+	other := sha256.Sum256([]byte("not the edge's key"))
+	handler.conf.PinnedPeerPublicKeySha256 = []string{hex.EncodeToString(other[:])}
+	handler.streamSettings.SecuritySettings = &xtls.Config{AllowInsecure: true}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	tunnel, err := handler.dialH3(ctx)
+	if err != nil {
+		t.Fatalf("dialH3 with allowInsecure refused an unpinned edge: %v", err)
+	}
+	defer tunnel.Close()
+}
+
+// Reporting the key must never be a reason to refuse a connection: it runs on
+// the path where the operator asked for no checking.
+func TestReportPublicKeyNeverRefuses(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		certs [][]byte
+	}{
+		{"nothing at all", nil},
+		{"an empty chain", [][]byte{}},
+		{"something that is not a certificate", [][]byte{{0x30, 0x00}}},
+		{"a real certificate", [][]byte{certificateFor(t, testKey(t))}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if err := reportPublicKey(c.certs, nil); err != nil {
+				t.Errorf("reportPublicKey refused: %v", err)
+			}
+		})
 	}
 }

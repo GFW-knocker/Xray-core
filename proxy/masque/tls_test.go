@@ -4,12 +4,17 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	gotls "crypto/tls"
 	"crypto/x509"
 	"encoding/hex"
 	"math/big"
 	"strings"
 	"testing"
 	"time"
+
+	xnet "github.com/GFW-knocker/Xray-core/common/net"
+	"github.com/GFW-knocker/Xray-core/transport/internet"
+	xtls "github.com/GFW-knocker/Xray-core/transport/internet/tls"
 )
 
 func testKey(t *testing.T) *ecdsa.PrivateKey {
@@ -170,4 +175,143 @@ func TestVerifyPinnedPublicKey(t *testing.T) {
 			t.Error("check accepted a certificate that does not parse")
 		}
 	})
+}
+
+// certificateFor is the DER of a bare self-signed certificate for key, which is
+// what both ends of this protocol present.
+func certificateFor(t *testing.T, key *ecdsa.PrivateKey) []byte {
+	t.Helper()
+	cert, err := SelfSignedCertificate(key)
+	if err != nil {
+		t.Fatalf("SelfSignedCertificate: %v", err)
+	}
+	return cert.Certificate[0]
+}
+
+func tlsHandler(t *testing.T, security *xtls.Config, pins []string) *Handler {
+	t.Helper()
+	stream := &internet.MemoryStreamConfig{}
+	if security != nil {
+		stream.SecuritySettings = security
+	}
+	return &Handler{
+		conf:           &Config{Transport: Config_H3, PinnedPeerPublicKeySha256: pins},
+		streamSettings: stream,
+		privateKey:     testKey(t),
+		endpoint: xnet.Destination{
+			Address: xnet.ParseAddress("127.0.0.1"),
+			Port:    443,
+			Network: xnet.Network_UDP,
+		},
+	}
+}
+
+// allowInsecure is the one switch that decides whether the edge is checked.
+// Unset, which is the default, the key has to match a pin.
+func TestAllowInsecureDecidesWhetherThePinIsChecked(t *testing.T) {
+	edgeKey := testKey(t)
+	edgeCert := certificateFor(t, edgeKey)
+	edgePin := PublicKeySHA256(mustParseCert(t, edgeCert))
+	edgePinHex := hex.EncodeToString(edgePin[:])
+
+	strangerCert := certificateFor(t, testKey(t))
+
+	for _, c := range []struct {
+		name          string
+		security      *xtls.Config
+		pins          []string
+		wantStranger  bool // whether a key that is not pinned is accepted
+		wantEdgeError bool // whether the pinned key itself is refused
+	}{
+		{
+			name:         "no tls settings at all pins against the built-in keys",
+			security:     nil,
+			pins:         nil,
+			wantStranger: false,
+		},
+		{
+			name:         "allowInsecure unset pins against the configured key",
+			security:     &xtls.Config{AllowInsecure: false},
+			pins:         []string{edgePinHex},
+			wantStranger: false,
+		},
+		{
+			name:         "allowInsecure set accepts anything",
+			security:     &xtls.Config{AllowInsecure: true},
+			pins:         []string{edgePinHex},
+			wantStranger: true,
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			handler := tlsHandler(t, c.security, c.pins)
+			config, err := handler.buildTLSConfig()
+			if err != nil {
+				t.Fatalf("buildTLSConfig: %v", err)
+			}
+			if config.VerifyPeerCertificate == nil {
+				t.Fatal("no verifier was installed, so nothing would ever look at the edge")
+			}
+			if !config.InsecureSkipVerify {
+				t.Error("chain validation is on, which cannot succeed against this edge")
+			}
+
+			err = config.VerifyPeerCertificate([][]byte{strangerCert}, nil)
+			if c.wantStranger && err != nil {
+				t.Errorf("a key that is not pinned was refused: %v", err)
+			}
+			if !c.wantStranger && err == nil {
+				t.Error("a key that is not pinned was accepted")
+			}
+
+			if len(c.pins) > 0 {
+				if err := config.VerifyPeerCertificate([][]byte{edgeCert}, nil); err != nil {
+					t.Errorf("the pinned key itself was refused: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func mustParseCert(t *testing.T, der []byte) *x509.Certificate {
+	t.Helper()
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatalf("ParseCertificate: %v", err)
+	}
+	return cert
+}
+
+// The client certificate and the ALPN follow the carrier, and the server name
+// falls back to the one the edge answers on.
+func TestBuildTLSConfigShape(t *testing.T) {
+	handler := tlsHandler(t, nil, nil)
+	config, err := handler.buildTLSConfig()
+	if err != nil {
+		t.Fatalf("buildTLSConfig: %v", err)
+	}
+	if config.ServerName != DefaultSNI {
+		t.Errorf("server name = %q, want %q", config.ServerName, DefaultSNI)
+	}
+	if len(config.NextProtos) != 1 || config.NextProtos[0] != "h3" {
+		t.Errorf("alpn = %v, want [h3] for the HTTP/3 carrier", config.NextProtos)
+	}
+	if config.GetClientCertificate == nil {
+		t.Fatal("no client certificate would be offered, and the edge asks for one")
+	}
+	offered, err := config.GetClientCertificate(&gotls.CertificateRequestInfo{})
+	if err != nil {
+		t.Fatalf("GetClientCertificate: %v", err)
+	}
+	if offered.Leaf == nil || !offered.Leaf.PublicKey.(*ecdsa.PublicKey).Equal(&handler.privateKey.PublicKey) {
+		t.Error("the certificate offered does not carry the configured key")
+	}
+
+	handler.conf.Transport = Config_H2
+	config, err = handler.buildTLSConfig()
+	if err != nil {
+		t.Fatalf("buildTLSConfig for h2: %v", err)
+	}
+	if len(config.NextProtos) != 1 || config.NextProtos[0] != "h2" {
+		t.Errorf("alpn = %v, want [h2] for the HTTP/2 carrier", config.NextProtos)
+	}
 }

@@ -130,22 +130,33 @@ func (h *Handler) buildTLSConfig() (*gotls.Config, error) {
 	}
 
 	// Chain validation cannot succeed here whatever the configuration says, so it
-	// is always off and something else has to do the checking.
+	// is always off and the pin is what stands in for it. Which leaves
+	// "allowInsecure" as the one switch that decides whether the edge is checked
+	// at all: with it unset, which is the default, the key has to match a pin.
 	previous := config.VerifyPeerCertificate
 	config.InsecureSkipVerify = true
 
+	var check func([][]byte, [][]*x509.Certificate) error
 	if allowInsecure {
+		if len(h.conf.PinnedPeerPublicKeySha256) > 0 {
+			errors.LogWarning(context.Background(),
+				`masque: "pinnedPeerPublicKeySha256" is set but "allowInsecure" overrides it, so the pins are not checked`)
+		}
 		errors.LogWarning(context.Background(),
 			`masque: "allowInsecure" is set, so the edge's key is not checked. `+
 				"Anyone on the path can read and alter this tunnel; unset it to pin the key instead.")
-		return config, nil
+		// Still look at what the edge presented. It is the only way to learn a
+		// key that is not in the built-in list, and reporting it is what makes
+		// turning the pin back on possible.
+		check = reportPublicKey
+	} else {
+		pins, err := parsePins(h.conf.PinnedPeerPublicKeySha256)
+		if err != nil {
+			return nil, err
+		}
+		check = verifyPinnedPublicKey(pins)
 	}
 
-	pins, err := parsePins(h.conf.PinnedPeerPublicKeySha256)
-	if err != nil {
-		return nil, err
-	}
-	check := verifyPinnedPublicKey(pins)
 	config.VerifyPeerCertificate = func(rawCerts [][]byte, chains [][]*x509.Certificate) error {
 		// Whatever streamSettings asked for still applies, and runs first.
 		if previous != nil {
@@ -156,4 +167,22 @@ func (h *Handler) buildTLSConfig() (*gotls.Config, error) {
 		return check(rawCerts, chains)
 	}
 	return config, nil
+}
+
+// reportPublicKey names the key the edge presented without judging it, so an
+// operator running with "allowInsecure" can see what to pin. It never refuses a
+// connection: refusing is the pinned path's job.
+func reportPublicKey(rawCerts [][]byte, _ [][]*x509.Certificate) error {
+	if len(rawCerts) == 0 {
+		return nil
+	}
+	leaf, err := x509.ParseCertificate(rawCerts[0])
+	if err != nil {
+		return nil
+	}
+	hash := PublicKeySHA256(leaf)
+	errors.LogWarning(context.Background(),
+		`masque: the edge's public key is `, hex.EncodeToString(hash[:]),
+		`; put that in "pinnedPeerPublicKeySha256" and unset "allowInsecure" to pin it`)
+	return nil
 }
