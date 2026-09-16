@@ -208,6 +208,87 @@ func (tun *netTun) MTU() int {
 	return tun.mtu
 }
 
+// setAddresses makes the device hold the addresses the edge says it will route
+// for, in place of whatever it was holding for those families.
+//
+// The edge is the authority: it routes for the address it assigned, so a device
+// holding anything else sends from a source the far side will not answer. Only
+// families the edge actually named are touched, so an assignment carrying one
+// IPv4 address leaves an IPv6 address alone rather than tearing it out.
+//
+// It reports whether anything actually changed, so a mere confirmation of what
+// was already configured stays quiet.
+func (tun *netTun) setAddresses(prefixes []netip.Prefix) (bool, error) {
+	if len(prefixes) == 0 {
+		return false, nil
+	}
+
+	info, ok := tun.stack.NICInfo()[1]
+	if !ok {
+		return false, fmt.Errorf("the device has no NIC to address")
+	}
+
+	wanted := make(map[tcpip.Address]int, len(prefixes))
+	families := make(map[tcpip.NetworkProtocolNumber]struct{}, 2)
+	for _, prefix := range prefixes {
+		wanted[tcpip.AddrFromSlice(prefix.Addr().AsSlice())] = prefix.Bits()
+		families[protocolNumberFor(prefix.Addr())] = struct{}{}
+	}
+
+	changed := false
+	held := make(map[tcpip.Address]struct{}, len(info.ProtocolAddresses))
+	for _, existing := range info.ProtocolAddresses {
+		if _, touching := families[existing.Protocol]; !touching {
+			continue
+		}
+		address := existing.AddressWithPrefix.Address
+		if bits, keep := wanted[address]; keep && bits == existing.AddressWithPrefix.PrefixLen {
+			held[address] = struct{}{}
+			continue
+		}
+		if err := tun.stack.RemoveAddress(1, address); err != nil {
+			return changed, fmt.Errorf("RemoveAddress(%v): %v", address, err)
+		}
+		changed = true
+	}
+
+	for _, prefix := range prefixes {
+		address := tcpip.AddrFromSlice(prefix.Addr().AsSlice())
+		if _, already := held[address]; already {
+			continue
+		}
+		protoAddr := tcpip.ProtocolAddress{
+			Protocol: protocolNumberFor(prefix.Addr()),
+			AddressWithPrefix: tcpip.AddressWithPrefix{
+				Address:   address,
+				PrefixLen: prefix.Bits(),
+			},
+		}
+		if err := tun.stack.AddProtocolAddress(1, protoAddr, stack.AddressProperties{}); err != nil {
+			return changed, fmt.Errorf("AddProtocolAddress(%v): %v", prefix, err)
+		}
+		changed = true
+
+		// A family the device did not have before needs its default route too.
+		if prefix.Addr().Is4() && !tun.hasV4 {
+			tun.stack.AddRoute(tcpip.Route{Destination: header.IPv4EmptySubnet, NIC: 1})
+			tun.hasV4 = true
+		}
+		if prefix.Addr().Is6() && !tun.hasV6 {
+			tun.stack.AddRoute(tcpip.Route{Destination: header.IPv6EmptySubnet, NIC: 1})
+			tun.hasV6 = true
+		}
+	}
+	return changed, nil
+}
+
+func protocolNumberFor(addr netip.Addr) tcpip.NetworkProtocolNumber {
+	if addr.Is4() {
+		return ipv4.ProtocolNumber
+	}
+	return ipv6.ProtocolNumber
+}
+
 func (tun *netTun) DialContextTCPAddrPort(ctx context.Context, addr netip.AddrPort) (net.Conn, error) {
 	fa, pn := convertToFullAddr(addr)
 	return gonet.DialContextTCP(ctx, tun.stack, fa, pn)

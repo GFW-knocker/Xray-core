@@ -213,11 +213,7 @@ func (t *tunnel) control() {
 				errors.LogInfoInner(t.ctx, err, "masque: a bad ADDRESS_ASSIGN")
 				continue
 			}
-			// The netstack already holds an address by now, so this only ever
-			// confirms it. A change would need the interface rebuilt.
-			for _, a := range assigned {
-				errors.LogInfo(t.ctx, "masque: the edge assigns ", a.Prefix)
-			}
+			t.adoptAddresses(assigned)
 
 		case capsuleRouteAdvertisement:
 			routes, err := parseRouteAdvertisement(value)
@@ -241,6 +237,38 @@ func (t *tunnel) control() {
 			errors.LogDebug(t.ctx, "masque: ignoring capsule type ", uint64(kind))
 		}
 	}
+}
+
+// adoptAddresses takes the address the edge assigned.
+//
+// The edge routes for what it assigned, so its answer wins over whatever the
+// configuration named: a device holding a different address would send from a
+// source the far side never answers, and the tunnel would look connected while
+// carrying nothing. Leaving "address" out of the configuration avoids the
+// question entirely, since then this is where the address comes from.
+func (t *tunnel) adoptAddresses(assigned []AssignedAddress) {
+	prefixes := make([]netip.Prefix, 0, len(assigned))
+	for _, a := range assigned {
+		prefixes = append(prefixes, a.Prefix)
+	}
+
+	changed, err := t.device.setAddresses(prefixes)
+	if err != nil {
+		errors.LogWarningInner(t.ctx, err, "masque: could not take the address the edge assigned, ", prefixes)
+		return
+	}
+	if !changed {
+		errors.LogDebug(t.ctx, "masque: the edge confirms ", prefixes)
+		return
+	}
+
+	// The resolver holds its own copy of which families the device has.
+	t.tnet.hasV4 = t.device.hasV4
+	t.tnet.hasV6 = t.device.hasV6
+
+	errors.LogWarning(t.ctx, "masque: the edge assigned ", prefixes,
+		`, which is not what this tunnel was holding; the interface now uses the assigned address. `+
+			`Leave "address" unset to take it from the edge in the first place.`)
 }
 
 // alive reports whether this tunnel is still carrying traffic. Every loop
