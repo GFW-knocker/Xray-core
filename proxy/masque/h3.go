@@ -11,6 +11,7 @@ import (
 	"github.com/GFW-knocker/Xray-core/common/errors"
 	"github.com/GFW-knocker/Xray-core/common/net"
 	"github.com/GFW-knocker/Xray-core/common/net/cnc"
+	"github.com/GFW-knocker/Xray-core/features/stats"
 	"github.com/GFW-knocker/Xray-core/transport/internet"
 	"github.com/GFW-knocker/Xray-core/transport/internet/hysteria/congestion"
 	"github.com/GFW-knocker/Xray-core/transport/internet/hysteria/congestion/bbr"
@@ -93,7 +94,42 @@ func (h *Handler) dialPacketConn(ctx context.Context) (net.PacketConn, *net.UDPA
 		}
 		pktConn = masked
 	}
+
+	// Wrapped after the masks, matching the WireGuard outbound, so the figures
+	// are the tunnel's own traffic rather than what the masks pad it out to.
+	if h.uplinkCounter != nil || h.downlinkCounter != nil {
+		pktConn = &countingPacketConn{
+			PacketConn: pktConn,
+			read:       h.downlinkCounter,
+			write:      h.uplinkCounter,
+		}
+	}
 	return pktConn, remote, nil
+}
+
+// countingPacketConn feeds the outbound's traffic counters. It measures the
+// carrier, so the figures cover the tunnel itself, headers and keepalives
+// included, not just the payload of the connections inside it.
+type countingPacketConn struct {
+	net.PacketConn
+	read  stats.Counter
+	write stats.Counter
+}
+
+func (c *countingPacketConn) ReadFrom(p []byte) (int, net.Addr, error) {
+	n, addr, err := c.PacketConn.ReadFrom(p)
+	if err == nil && c.read != nil {
+		c.read.Add(int64(n))
+	}
+	return n, addr, err
+}
+
+func (c *countingPacketConn) WriteTo(p []byte, addr net.Addr) (int, error) {
+	n, err := c.PacketConn.WriteTo(p, addr)
+	if err == nil && c.write != nil {
+		c.write.Add(int64(n))
+	}
+	return n, err
 }
 
 func (h *Handler) quicConfig() (*quic.Config, *internet.QuicParams) {

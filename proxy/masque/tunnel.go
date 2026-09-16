@@ -209,6 +209,13 @@ func (t *tunnel) control() {
 	}
 }
 
+// alive reports whether this tunnel is still carrying traffic. Every loop
+// closes the tunnel on its way out, so a cancelled context means the session
+// is over and a new one is needed.
+func (t *tunnel) alive() bool {
+	return t.ctx.Err() == nil
+}
+
 // Close tears the session down. Every loop calls it on the way out, so whichever
 // end fails first takes the rest with it.
 func (t *tunnel) Close() error {
