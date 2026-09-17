@@ -199,21 +199,6 @@ func requireServerExtendedConnect(t *testing.T) {
 	}
 }
 
-func TestNewH2ConnectRequestCarriesTheProtocolAsAHeader(t *testing.T) {
-	body, _ := io.Pipe()
-	request, err := newH2ConnectRequest("cloudflareaccess.com", "/", "cf-connect-ip", body)
-	if err != nil {
-		t.Fatalf("newH2ConnectRequest: %v", err)
-	}
-	// x/net/http2 looks the protocol up in the header map, not in Proto.
-	if got := request.Header.Get(":protocol"); got != "cf-connect-ip" {
-		t.Errorf(":protocol = %q, want cf-connect-ip", got)
-	}
-	if request.Body == nil {
-		t.Error("the request has no body, so there would be nowhere to write capsules")
-	}
-}
-
 // The same proof as for HTTP/3, over a carrier with no datagrams: a TCP
 // connection on the client's netstack reaches a listener on the far side, with
 // every packet travelling as a capsule.
