@@ -177,7 +177,19 @@ func (h *Handler) quicConfig() (*quic.Config, *internet.QuicParams) {
 		MaxIdleTimeout:                 time.Duration(params.MaxIdleTimeout) * time.Second,
 		KeepAlivePeriod:                time.Duration(params.KeepAlivePeriod) * time.Second,
 		DisablePathMTUDiscovery:        params.DisablePathMtuDiscovery,
-		ChromeParrot:                   !params.DisableChromeParrot,
+		// ChromeParrot is deliberately left off, and unlike everything else here
+		// it is not offered as a setting.
+		//
+		// The parrot replaces the ClientHello with a recorded Chrome one so the
+		// handshake does not look like Go's. Chrome never authenticates itself to
+		// a web server, so the recording has nothing in it for a client
+		// certificate and the parrot cannot send one. Every MASQUE tunnel is
+		// mutual TLS -- the certificate is the whole of the client's identity to
+		// the edge -- so a parroted handshake is one the edge will not finish. It
+		// does not fail loudly either: the edge simply stops answering, which is
+		// indistinguishable from a blocked path. Measured against
+		// 162.159.198.1:443, parrot on gave "handshake did not complete in time"
+		// every time and parrot off connected in ~370 ms.
 	}
 	if config.MaxIdleTimeout == 0 {
 		config.MaxIdleTimeout = net.ConnIdleTimeout
@@ -188,6 +200,28 @@ func (h *Handler) quicConfig() (*quic.Config, *internet.QuicParams) {
 		config.KeepAlivePeriod = net.QuicgoH3KeepAlivePeriod
 	}
 	return config, params
+}
+
+// masqueVersions is the order QUIC versions are tried in, and it is the
+// opposite of quicdial's own preference on purpose.
+//
+// quicdial leads with v2 because some networks drop v1 Initials, and on a path
+// where that is the only obstacle it is the right call. A MASQUE edge is not
+// such a path. Cloudflare's does not implement v2 at all: a v2 Initial is
+// answered with a Version Negotiation packet and nothing else, so leading with
+// v2 cannot ever succeed here, it only costs a timeout.
+//
+// It costs more than a timeout, in fact, and that is the real reason for this
+// list. The udp masks prime the flow once per destination on the first packet
+// written, so the priming that carries the handshake past a v1-dropping filter
+// is spent on the v2 attempt that was always going to fail. The v1 attempt that
+// follows reuses the same socket, gets no priming, and is dropped. Leading with
+// v1 spends the priming on the attempt that can work.
+//
+// v2 is kept as a fallback for an edge that is the other way around.
+var masqueVersions = [][]quic.Version{
+	{quic.Version1},
+	{quic.Version2},
 }
 
 // dialH3 brings up the tunnel: a QUIC connection to the edge, an HTTP/3
@@ -210,14 +244,8 @@ func (h *Handler) dialH3(ctx context.Context) (*h3Tunnel, error) {
 
 	config, params := h.quicConfig()
 	quicTr := &quic.Transport{Conn: pktConn, DisableGSO: params.DisableGSO}
-	if !params.DisableChromeParrot {
-		quicTr.ConnectionIDGenerator = quic.ZeroLengthConnectionIDGenerator{}
-		tlsConfig.GetCertificate = nil
-	}
 
-	// Prefer QUIC v2. Some networks drop v1 Initials outright, which looks
-	// exactly like an unreachable edge; quicdial remembers what worked.
-	conn, err := quicdial.Dial(ctx, config, quicdial.Plain, &h.quicVersion, func(cfg *quic.Config) (*quic.Conn, error) {
+	conn, err := quicdial.Dial(ctx, config, masqueVersions, &h.quicVersion, func(cfg *quic.Config) (*quic.Conn, error) {
 		return quicTr.DialEarly(ctx, remote, tlsConfig, cfg)
 	})
 	if err != nil {

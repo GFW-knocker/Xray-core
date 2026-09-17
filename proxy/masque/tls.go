@@ -31,24 +31,24 @@ import (
 // so and names the key it saw: set "allowInsecure" once, take the key out of
 // the log, put it in "pinnedPeerPublicKeySha256", and unset "allowInsecure"
 // again.
+// Which of these the edge serves depends on the SNI and on the carrier, so all
+// four are here and any one matching is enough.
 var DefaultPinnedPublicKeys = []string{
-	// *.cloudflareclient.com, Let's Encrypt YE2. Observed 2026-09-17 on
-	// 104.16.0.1, 188.114.96.1 and 162.159.192.1 for both the HTTP/3 SNI
-	// (consumer-masque) and the HTTP/2 one (consumer-masque-proxy).
-	"19cee442633f9b409e769d4310896f9304d67bcf81e6bcf299a674392ca041f0",
-	// cloudflareaccess.com, Google Trust Services WE1. Observed the same day on
-	// the same addresses.
-	"e78f36294ee550309fa034c90f10c3c82ab5d34cf79964d55e716c75b2755c3f",
-
-	// The two below are what aether v2.0.0 ships. Neither is served on any
-	// address probed above any more, so they are almost certainly rotated out,
-	// but they are kept because that probing only covers TLS over TCP and the
-	// HTTP/3 edge may still answer QUIC with one of them.
-	//
-	// masque.cloudflareclient.com, self-signed under Cloudflare's own root,
-	// returned when the SNI is empty or unrecognised.
+	// masque.cloudflareclient.com, self-signed under Cloudflare's own root.
+	// This is the one the HTTP/3 carrier actually meets: confirmed 2026-09-17
+	// on 162.159.198.1:443 over QUIC with SNI consumer-masque.cloudflareclient.com,
+	// on a connection that went on to carry traffic. Also what aether v2.0.0
+	// ships as its first pin.
 	"eb591b36ab26ba617e98371918c10bcdeae3742db6e76543f94be524dce1d555",
-	// cloudflareaccess.com, an older Google Trust Services key.
+
+	// *.cloudflareclient.com, Let's Encrypt YE2. Observed the same day on the
+	// same addresses but over TCP, which on these edges is Cloudflare's ordinary
+	// web front door rather than this service. Kept in case an HTTP/2 carrier
+	// ever does serve MASQUE there.
+	"19cee442633f9b409e769d4310896f9304d67bcf81e6bcf299a674392ca041f0",
+	// cloudflareaccess.com, Google Trust Services WE1, over TCP.
+	"e78f36294ee550309fa034c90f10c3c82ab5d34cf79964d55e716c75b2755c3f",
+	// cloudflareaccess.com, an older Google Trust Services key, from aether.
 	"3fbb1d7452d32b3881eb4b5d48421445b6b9d8f5225959f033532d502637b040",
 }
 
