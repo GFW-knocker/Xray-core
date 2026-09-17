@@ -25,12 +25,30 @@ import (
 // Why the public key rather than the certificate: a certificate pin breaks every
 // time the edge renews, and one of these is issued by a public CA on a short
 // cycle. The key outlives the certificate.
+// These rotate. The certificates behind them are ordinary ninety-day ones from
+// public CAs, and Cloudflare rekeys on renewal, so a pin here has a shelf life
+// of a few months rather than years. When one stops matching, the failure says
+// so and names the key it saw: set "allowInsecure" once, take the key out of
+// the log, put it in "pinnedPeerPublicKeySha256", and unset "allowInsecure"
+// again.
 var DefaultPinnedPublicKeys = []string{
-	// masque.cloudflareclient.com, self-signed under Cloudflare's own root. This
-	// is what comes back when the SNI is empty or not one the edge knows.
+	// *.cloudflareclient.com, Let's Encrypt YE2. Observed 2026-09-17 on
+	// 104.16.0.1, 188.114.96.1 and 162.159.192.1 for both the HTTP/3 SNI
+	// (consumer-masque) and the HTTP/2 one (consumer-masque-proxy).
+	"19cee442633f9b409e769d4310896f9304d67bcf81e6bcf299a674392ca041f0",
+	// cloudflareaccess.com, Google Trust Services WE1. Observed the same day on
+	// the same addresses.
+	"e78f36294ee550309fa034c90f10c3c82ab5d34cf79964d55e716c75b2755c3f",
+
+	// The two below are what aether v2.0.0 ships. Neither is served on any
+	// address probed above any more, so they are almost certainly rotated out,
+	// but they are kept because that probing only covers TLS over TCP and the
+	// HTTP/3 edge may still answer QUIC with one of them.
+	//
+	// masque.cloudflareclient.com, self-signed under Cloudflare's own root,
+	// returned when the SNI is empty or unrecognised.
 	"eb591b36ab26ba617e98371918c10bcdeae3742db6e76543f94be524dce1d555",
-	// cloudflareaccess.com, issued by Google Trust Services. This is what comes
-	// back when the SNI is cloudflareaccess.com.
+	// cloudflareaccess.com, an older Google Trust Services key.
 	"3fbb1d7452d32b3881eb4b5d48421445b6b9d8f5225959f033532d502637b040",
 }
 
@@ -110,16 +128,29 @@ func (h *Handler) buildTLSConfig() (*gotls.Config, error) {
 		settings = tls.ConfigFromStreamSettings(h.streamSettings)
 	}
 
+	// Which server name to send is a real choice here, not a formality: the edge
+	// answers differently per SNI, and at least one of its endpoints only
+	// completes a handshake when no SNI is sent at all. So streamSettings has
+	// the final say whenever it is present, an empty "serverName" included,
+	// which is how sending none is asked for. The default only fills in for a
+	// configuration that said nothing about TLS.
 	var config *gotls.Config
 	allowInsecure := false
 	if settings != nil {
 		config = settings.GetTLSConfig(tls.WithDestination(h.endpoint), tls.WithNextProto(h.alpn()))
+		if settings.ServerName == "" {
+			// WithDestination fills a name in from the address dialled. Here that
+			// is an anycast IP and never what the edge expects, and an empty
+			// "serverName" is a deliberate request for no SNI, so undo it.
+			config.ServerName = ""
+		}
 		allowInsecure = settings.AllowInsecure
 	} else {
-		config = &gotls.Config{NextProtos: []string{h.alpn()}}
+		config = &gotls.Config{NextProtos: []string{h.alpn()}, ServerName: DefaultSNI}
 	}
 	if config.ServerName == "" {
-		config.ServerName = DefaultSNI
+		errors.LogInfo(context.Background(),
+			`masque: sending no SNI, which is what an empty "serverName" asks for`)
 	}
 
 	// The edge asks for a client certificate. Leaving this to Certificates would

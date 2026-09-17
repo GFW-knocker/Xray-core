@@ -315,3 +315,27 @@ func TestBuildTLSConfigShape(t *testing.T) {
 		t.Errorf("alpn = %v, want [h2] for the HTTP/2 carrier", config.NextProtos)
 	}
 }
+
+// Which SNI goes out is a real choice: the edge answers differently per name,
+// and one of its endpoints only completes a handshake with none at all.
+func TestServerNameFollowsTheConfiguration(t *testing.T) {
+	for _, c := range []struct {
+		name     string
+		security *xtls.Config
+		want     string
+	}{
+		{"no tls settings falls back to the default", nil, DefaultSNI},
+		{"a configured name is used", &xtls.Config{ServerName: "edge.example"}, "edge.example"},
+		{"an empty name means send none", &xtls.Config{}, ""},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			config, err := tlsHandler(t, c.security, nil).buildTLSConfig()
+			if err != nil {
+				t.Fatalf("buildTLSConfig: %v", err)
+			}
+			if config.ServerName != c.want {
+				t.Errorf("server name = %q, want %q", config.ServerName, c.want)
+			}
+		})
+	}
+}
