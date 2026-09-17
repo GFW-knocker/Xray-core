@@ -50,12 +50,21 @@ message Config {
 
   Transport transport = 5;
 
-  // The :authority and :path of the CONNECT request.
+  // The :authority of the CONNECT request. On the HTTP/2 carrier a port is
+  // added when this names none, since an ordinary CONNECT addresses a host and
+  // a port.
   string authority = 6;
+
+  // The :path of the CONNECT request. HTTP/3 only: the HTTP/2 carrier sends an
+  // ordinary CONNECT, which has nowhere to put one.
   string path = 7;
 
-  // The :protocol of the extended CONNECT. Cloudflare's edge wants
-  // "cf-connect-ip" rather than RFC 9484's "connect-ip".
+  // How the tunnel protocol is named. Cloudflare's edge wants "cf-connect-ip"
+  // rather than RFC 9484's "connect-ip".
+  //
+  // Where it is carried differs by transport, which is the edge's doing rather
+  // than a choice: HTTP/3 takes it as the :protocol of an extended CONNECT,
+  // HTTP/2 as a "cf-connect-proto" header on an ordinary one.
   string connect_protocol = 8;
 
   int32 mtu = 9;

@@ -11,7 +11,6 @@ import (
 	stdnet "net"
 	"net/http"
 	"net/netip"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -31,10 +30,22 @@ import (
 // It demands a client certificate, which is how the real edge authenticates a
 // registered key, so a carrier that failed to present one would not get this far.
 type h2Edge struct {
-	port      int
-	pin       string
-	stacks    chan *stack.Stack
-	protocols chan string
+	port     int
+	pin      string
+	stacks   chan *stack.Stack
+	requests chan connectRequest
+}
+
+// connectRequest is what the edge saw, so a test can assert the shape of the
+// CONNECT and not merely that one arrived.
+type connectRequest struct {
+	// protocol is the cf-connect-proto header, which is where this carrier
+	// names the tunnel protocol.
+	protocol string
+	// extended is the :protocol pseudo-header. It has to be empty: an extended
+	// CONNECT is what the HTTP/3 carrier sends, and what this edge would refuse.
+	extended string
+	path     string
 }
 
 func startH2Edge(t *testing.T) *h2Edge {
@@ -57,10 +68,10 @@ func startH2Edge(t *testing.T) *h2Edge {
 	t.Cleanup(func() { listener.Close() })
 
 	edge := &h2Edge{
-		port:      listener.Addr().(*stdnet.TCPAddr).Port,
-		pin:       hex.EncodeToString(pin[:]),
-		stacks:    make(chan *stack.Stack, 4),
-		protocols: make(chan string, 4),
+		port:     listener.Addr().(*stdnet.TCPAddr).Port,
+		pin:      hex.EncodeToString(pin[:]),
+		stacks:   make(chan *stack.Stack, 4),
+		requests: make(chan connectRequest, 4),
 	}
 
 	tlsConfig := &gotls.Config{
@@ -75,7 +86,11 @@ func startH2Edge(t *testing.T) *h2Edge {
 			return
 		}
 		select {
-		case edge.protocols <- r.Header.Get(":protocol"):
+		case edge.requests <- connectRequest{
+			protocol: r.Header.Get(connectProtocolHeader),
+			extended: r.Header.Get(":protocol"),
+			path:     r.URL.Path,
+		}:
 		default:
 		}
 
@@ -184,26 +199,10 @@ func handlerForH2Edge(t *testing.T, edge *h2Edge, stream *internet.MemoryStreamC
 	}
 }
 
-// requireServerExtendedConnect skips when the test server will not advertise
-// extended CONNECT.
-//
-// x/net/http2 turns SETTINGS_ENABLE_CONNECT_PROTOCOL off by default on the
-// server side (golang/go#71128) and only the GODEBUG switch brings it back. It
-// is a limit on what can be tested here, not on the carrier: the client has no
-// such switch, and it is the edge's SETTINGS that decide. Run these with
-// GODEBUG=http2xconnect=1.
-func requireServerExtendedConnect(t *testing.T) {
-	t.Helper()
-	if !strings.Contains(os.Getenv("GODEBUG"), "http2xconnect=1") {
-		t.Skip("needs GODEBUG=http2xconnect=1 so the test server advertises extended CONNECT")
-	}
-}
-
 // The same proof as for HTTP/3, over a carrier with no datagrams: a TCP
 // connection on the client's netstack reaches a listener on the far side, with
 // every packet travelling as a capsule.
 func TestH2TunnelCarriesATCPConnection(t *testing.T) {
-	requireServerExtendedConnect(t)
 	edge := startH2Edge(t)
 	handler := handlerForH2Edge(t, edge, nil)
 
@@ -217,9 +216,18 @@ func TestH2TunnelCarriesATCPConnection(t *testing.T) {
 	defer tunnel.Close()
 
 	select {
-	case protocol := <-edge.protocols:
-		if protocol != DefaultConnectProtocol {
-			t.Errorf("the edge saw :protocol %q, want %q", protocol, DefaultConnectProtocol)
+	case request := <-edge.requests:
+		if request.protocol != DefaultConnectProtocol {
+			t.Errorf("the edge saw %s %q, want %q",
+				connectProtocolHeader, request.protocol, DefaultConnectProtocol)
+		}
+		// An ordinary CONNECT, which is what this edge answers. See
+		// connectProtocolHeader for why the two carriers differ here.
+		if request.extended != "" {
+			t.Errorf("the edge saw :protocol %q, want an ordinary CONNECT with none", request.extended)
+		}
+		if request.path != "" {
+			t.Errorf("the edge saw :path %q, want an ordinary CONNECT with none", request.path)
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("the edge never saw the CONNECT")
@@ -259,7 +267,6 @@ func TestH2TunnelCarriesATCPConnection(t *testing.T) {
 // rather than over it. A tunnel that comes up with a fragment mask configured
 // is a tunnel whose ClientHello went through it.
 func TestH2TunnelWorksThroughAFragmentMask(t *testing.T) {
-	requireServerExtendedConnect(t)
 	edge := startH2Edge(t)
 
 	handler := handlerForH2Edge(t, edge, fragmentMaskSettings())
@@ -297,7 +304,6 @@ func TestH2TunnelWorksThroughAFragmentMask(t *testing.T) {
 
 // An edge that refuses the protocol token has to surface as an error.
 func TestH2TunnelReportsARefusedTunnel(t *testing.T) {
-	requireServerExtendedConnect(t)
 	edge := startH2Edge(t)
 	handler := handlerForH2Edge(t, edge, nil)
 	handler.conf.Authority = ""

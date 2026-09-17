@@ -149,11 +149,19 @@ type Config struct {
 	// private_key when empty, which is the normal case.
 	Certificate string           `protobuf:"bytes,4,opt,name=certificate,proto3" json:"certificate,omitempty"`
 	Transport   Config_Transport `protobuf:"varint,5,opt,name=transport,proto3,enum=xray.proxy.masque.Config_Transport" json:"transport,omitempty"`
-	// The :authority and :path of the CONNECT request.
+	// The :authority of the CONNECT request. On the HTTP/2 carrier a port is
+	// added when this names none, since an ordinary CONNECT addresses a host and
+	// a port.
 	Authority string `protobuf:"bytes,6,opt,name=authority,proto3" json:"authority,omitempty"`
-	Path      string `protobuf:"bytes,7,opt,name=path,proto3" json:"path,omitempty"`
-	// The :protocol of the extended CONNECT. Cloudflare's edge wants
-	// "cf-connect-ip" rather than RFC 9484's "connect-ip".
+	// The :path of the CONNECT request. HTTP/3 only: the HTTP/2 carrier sends an
+	// ordinary CONNECT, which has nowhere to put one.
+	Path string `protobuf:"bytes,7,opt,name=path,proto3" json:"path,omitempty"`
+	// How the tunnel protocol is named. Cloudflare's edge wants "cf-connect-ip"
+	// rather than RFC 9484's "connect-ip".
+	//
+	// Where it is carried differs by transport, which is the edge's doing rather
+	// than a choice: HTTP/3 takes it as the :protocol of an extended CONNECT,
+	// HTTP/2 as a "cf-connect-proto" header on an ordinary one.
 	ConnectProtocol string `protobuf:"bytes,8,opt,name=connect_protocol,json=connectProtocol,proto3" json:"connect_protocol,omitempty"`
 	Mtu             int32  `protobuf:"varint,9,opt,name=mtu,proto3" json:"mtu,omitempty"`
 	// Resolvers to use through the tunnel, matching the WireGuard outbound's
