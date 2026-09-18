@@ -318,3 +318,34 @@ func TestReportPublicKeyNeverRefuses(t *testing.T) {
 		})
 	}
 }
+
+// "keepAlivePeriod" in the outbound's settings covers both carriers, so on h3 it
+// has to reach the one timer quic-go runs -- without adding a second one, which
+// is why this asserts the field rather than counting packets.
+func TestKeepAlivePeriodReachesTheQUICConfig(t *testing.T) {
+	cases := []struct {
+		name     string
+		settings int32
+		quic     int64
+		want     time.Duration
+	}{
+		{"neither set keeps the default", 0, 0, xnet.QuicgoH3KeepAlivePeriod},
+		{"quicSettings alone still works", 0, 25, 25 * time.Second},
+		{"settings alone is used", 40, 0, 40 * time.Second},
+		{"settings wins over quicSettings", 40, 25, 40 * time.Second},
+		{"a negative period turns the keepalive off", -1, 25, 0},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			h := &Handler{
+				conf:           &Config{KeepAlivePeriod: c.settings},
+				streamSettings: &internet.MemoryStreamConfig{QuicParams: &internet.QuicParams{KeepAlivePeriod: c.quic}},
+			}
+			config, _ := h.quicConfig()
+			if config.KeepAlivePeriod != c.want {
+				t.Errorf("KeepAlivePeriod = %v, want %v", config.KeepAlivePeriod, c.want)
+			}
+		})
+	}
+}

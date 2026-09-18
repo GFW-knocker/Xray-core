@@ -319,7 +319,7 @@ func (c *noisePacketConn) WriteTo(p []byte, addr net.Addr) (int, error) {
 	previous := c.last.Swap(now)
 
 	first := previous == 0
-	if first || now-previous >= int64(c.gap) {
+	if first || (c.gap > 0 && now-previous >= int64(c.gap)) {
 		why := "before a keepalive"
 		if first {
 			why = "before the handshake"
@@ -334,12 +334,39 @@ func (c *noisePacketConn) WriteTo(p []byte, addr net.Addr) (int, error) {
 	return c.PacketConn.WriteTo(p, addr)
 }
 
+// effectiveKeepAlive is how often quic-go will really send a keep-alive, which
+// is not always the period it was handed.
+//
+// quic-go clamps it to half the idle timeout, so that a connection cannot sit
+// long enough to be dropped for idleness between two keep-alives. Reading the
+// unclamped number would put the noise on a slower schedule than the keep-alives
+// it is supposed to lead, and most of them would go out bare: with a 60s period
+// and a 30s idle timeout quic-go pings every 15s, and a gap taken from 60s would
+// catch roughly one in three.
+//
+// quic-go also floors the interval at 1.5 PTO, which cannot be known here
+// because it depends on the measured round trip. That floor only ever makes
+// keep-alives *more* frequent, and a gap that is too short merely sends noise
+// ahead of ordinary traffic as well, so it is left out.
+func effectiveKeepAlive(period, maxIdleTimeout time.Duration) time.Duration {
+	if period <= 0 {
+		return 0
+	}
+	if maxIdleTimeout > 0 && maxIdleTimeout/2 < period {
+		return maxIdleTimeout / 2
+	}
+	return period
+}
+
 // wrapNoise installs the built-in noise, when any is configured.
 //
-// The gap is three quarters of the keepalive period: long enough that ordinary
-// back-to-back traffic never trips it, short enough that the keepalive, which
-// arrives one whole period after the last datagram, always does.
-func (h *Handler) wrapNoise(ctx context.Context, conn net.PacketConn, keepAlive time.Duration) net.PacketConn {
+// The gap is three quarters of the interval keep-alives actually run on: long
+// enough that ordinary back-to-back traffic never trips it, short enough that
+// the keep-alive, which arrives a whole interval after the last datagram, always
+// does. A zero gap leaves only the burst ahead of the first datagram, which is
+// what a tunnel with its keepalive turned off should get -- there are no
+// keep-alives to lead, and treating every write as one would be absurd.
+func (h *Handler) wrapNoise(ctx context.Context, conn net.PacketConn, keepAlive, maxIdleTimeout time.Duration) net.PacketConn {
 	noise := parseNoise(h.conf)
 	if !noise.enabled() {
 		return conn
@@ -348,6 +375,6 @@ func (h *Handler) wrapNoise(ctx context.Context, conn net.PacketConn, keepAlive 
 		PacketConn: conn,
 		ctx:        ctx,
 		noise:      noise,
-		gap:        keepAlive * 3 / 4,
+		gap:        effectiveKeepAlive(keepAlive, maxIdleTimeout) * 3 / 4,
 	}
 }

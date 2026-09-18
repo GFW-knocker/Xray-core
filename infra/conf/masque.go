@@ -23,8 +23,10 @@ type MasqueConfig struct {
 	DNS             []string `json:"remoteDNS"`
 	DomainStrategy  string   `json:"domainStrategy"`
 
-	// Seconds. Both drive the HTTP/2 carrier's PING; HTTP/3 keeps its keepalive
-	// in streamSettings' quicSettings like every other QUIC outbound.
+	// Seconds. KeepAlivePeriod covers both carriers: it is the HTTP/2 PING
+	// interval, and on HTTP/3 it overrides quicSettings' keepAlivePeriod.
+	// KeepAliveTimeout is HTTP/2 only; HTTP/3's equivalent is quicSettings'
+	// maxIdleTimeout.
 	KeepAlivePeriod  int32 `json:"keepAlivePeriod"`
 	KeepAliveTimeout int32 `json:"keepAliveTimeout"`
 

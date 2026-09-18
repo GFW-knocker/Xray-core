@@ -46,7 +46,7 @@ func (c *recordingPacketConn) ReadFrom([]byte) (int, net.Addr, error) {
 func burstFor(t *testing.T, conf *Config) [][]byte {
 	t.Helper()
 	recorder := &recordingPacketConn{}
-	conn := (&Handler{conf: conf}).wrapNoise(context.Background(), recorder, 10*time.Second)
+	conn := (&Handler{conf: conf}).wrapNoise(context.Background(), recorder, 10*time.Second, 300*time.Second)
 
 	marker := []byte("marker")
 	if _, err := conn.WriteTo(marker, &stdnet.UDPAddr{}); err != nil {
@@ -235,7 +235,7 @@ func TestNoiseGoesThroughTheUdpMask(t *testing.T) {
 	masked := &prefixingPacketConn{PacketConn: recorder, prefix: []byte{0xAB, 0xCD}}
 	conn := (&Handler{conf: &Config{
 		Wnoise: NoiseRandom, Wnoisecount: "2", Wnoisedelay: "0", Wpayloadsize: "16-16",
-	}}).wrapNoise(context.Background(), masked, 10*time.Second)
+	}}).wrapNoise(context.Background(), masked, 10*time.Second, 300*time.Second)
 
 	if _, err := conn.WriteTo([]byte("marker"), &stdnet.UDPAddr{}); err != nil {
 		t.Fatalf("WriteTo: %v", err)
@@ -317,7 +317,63 @@ func TestNoiseFiresBeforeTheFirstPacketAndBeforeEachKeepalive(t *testing.T) {
 func TestNoiseLeavesTheConnectionAloneWhenItIsOff(t *testing.T) {
 	recorder := &recordingPacketConn{}
 	h := &Handler{conf: &Config{Wnoise: NoiseNone}}
-	if got := h.wrapNoise(context.Background(), recorder, 10*time.Second); got != net.PacketConn(recorder) {
+	if got := h.wrapNoise(context.Background(), recorder, 10*time.Second, 300*time.Second); got != net.PacketConn(recorder) {
 		t.Error("the connection was wrapped even though wnoise is off")
+	}
+}
+
+// quic-go clamps the keep-alive interval to half the idle timeout, so the gap
+// has to be taken from the clamped value. Reading the raw period would put the
+// noise on a slower schedule than the keep-alives it is meant to lead.
+func TestNoiseGapFollowsTheIntervalQUICActuallyUses(t *testing.T) {
+	cases := []struct {
+		name            string
+		period, maxIdle time.Duration
+		want            time.Duration
+	}{
+		{"the period, when the idle timeout leaves room", 10 * time.Second, 300 * time.Second, 10 * time.Second},
+		{"half the idle timeout, when it does not", 60 * time.Second, 30 * time.Second, 15 * time.Second},
+		{"exactly half is not clamped further", 15 * time.Second, 30 * time.Second, 15 * time.Second},
+		{"no idle timeout leaves the period alone", 10 * time.Second, 0, 10 * time.Second},
+		{"a disabled keepalive has no interval at all", 0, 300 * time.Second, 0},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := effectiveKeepAlive(c.period, c.maxIdle); got != c.want {
+				t.Errorf("effectiveKeepAlive(%v, %v) = %v, want %v", c.period, c.maxIdle, got, c.want)
+			}
+		})
+	}
+}
+
+// With the keepalive off there is nothing to lead, so only the first datagram
+// gets a burst. Treating every later write as a keepalive would put noise in
+// front of ordinary traffic forever.
+func TestNoiseWithNoKeepaliveOnlyFiresOnce(t *testing.T) {
+	recorder := &recordingPacketConn{}
+	conn := (&Handler{conf: &Config{
+		Wnoise: NoiseRandom, Wnoisecount: "1", Wnoisedelay: "0", Wpayloadsize: "16-16",
+	}}).wrapNoise(context.Background(), recorder, 0, 300*time.Second)
+
+	for i := 0; i < 3; i++ {
+		if _, err := conn.WriteTo([]byte("real"), &stdnet.UDPAddr{}); err != nil {
+			t.Fatalf("WriteTo: %v", err)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	packets := recorder.packets()
+	// one noise datagram, then the three real ones
+	if len(packets) != 4 {
+		t.Fatalf("wire carried %d datagrams, want 4", len(packets))
+	}
+	if len(packets[0]) != 16 {
+		t.Errorf("datagram 0 is %q, want the single noise datagram", packets[0])
+	}
+	for i := 1; i < 4; i++ {
+		if string(packets[i]) != "real" {
+			t.Errorf("datagram %d is %q, want a real one", i, packets[i])
+		}
 	}
 }

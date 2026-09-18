@@ -88,19 +88,28 @@ message Config {
   // certificate and does not.
   repeated string pinned_peer_public_key_sha256 = 12;
 
-  // How often the HTTP/2 carrier sends a PING, in seconds, and how long it
-  // waits for the answer before giving the tunnel up.
+  // How often to check the tunnel is still there, in seconds, and how long to
+  // wait for the answer before giving it up.
   //
-  // HTTP/3 does not read these: QUIC has a keepalive of its own, configured
-  // like every other QUIC outbound's through streamSettings' quicSettings.
-  // HTTP/2 has nothing equivalent, and without a ping it puts no bytes on the
-  // wire at all while idle. That costs two things: a NAT may drop the mapping,
-  // and -- the one that actually bites -- a connection the edge or a middlebox
-  // has silently dropped is not noticed until the next write, which is some
-  // user's connection failing rather than a reconnect.
+  // keep_alive_period covers both carriers, but they reach it differently.
+  // HTTP/3 has QUIC's own keep-alive, which every QUIC outbound configures
+  // through streamSettings' quicSettings; a value here overrides that one, so a
+  // configuration does not have to know where QUIC keeps it. It is still the
+  // one timer quic-go runs -- this chooses the number, it does not add a second.
+  // Left at zero, HTTP/3 keeps whatever quicSettings says, or its 10s default.
   //
-  // Zero takes the defaults, which are the reference client's: ping every 15s,
-  // give up after 20s without an answer. A negative period turns the ping off.
+  // HTTP/2 has nothing equivalent, which is why these exist at all: without a
+  // ping it puts no bytes on the wire while idle. That costs a NAT mapping, and
+  // -- the one that actually bites -- a connection the edge or a middlebox has
+  // silently dropped is not noticed until the next write, which is some user's
+  // connection failing rather than a reconnect. Its default is the reference
+  // client's: ping every 15s, give up after 20s.
+  //
+  // A negative period turns the check off on either carrier.
+  //
+  // keep_alive_timeout is HTTP/2 only. HTTP/3's equivalent is quicSettings'
+  // max_idle_timeout, which is when QUIC drops a connection it has heard
+  // nothing on.
   int32 keep_alive_period = 13;
   int32 keep_alive_timeout = 14;
 

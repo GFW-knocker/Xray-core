@@ -128,7 +128,7 @@ func (h *Handler) dialPacketConn(ctx context.Context) (net.PacketConn, *net.UDPA
 	// with whatever they do, and inside the counters, so junk is not billed as
 	// tunnel traffic any more than mask padding is.
 	config, _ := h.quicConfig()
-	pktConn = h.wrapNoise(ctx, pktConn, config.KeepAlivePeriod)
+	pktConn = h.wrapNoise(ctx, pktConn, config.KeepAlivePeriod, config.MaxIdleTimeout)
 
 	// Wrapped after the masks, matching the WireGuard outbound, so the figures
 	// are the tunnel's own traffic rather than what the masks pad it out to.
@@ -204,6 +204,30 @@ func (h *Handler) quicConfig() (*quic.Config, *internet.QuicParams) {
 		// The tunnel is idle whenever nothing is being proxied, and an edge that
 		// forgets it costs a full redial.
 		config.KeepAlivePeriod = net.QuicgoH3KeepAlivePeriod
+	}
+
+	// "keepAlivePeriod" in the outbound's own settings wins over quicSettings',
+	// so one setting covers both carriers and nobody has to know that QUIC keeps
+	// its keepalive somewhere else. It is still the same single quic-go timer
+	// underneath -- this only chooses the number it runs on, it does not add a
+	// second one.
+	//
+	// Only an explicit value overrides: left unset it is zero, and h3 keeps the
+	// quicSettings value or the default it has always had.
+	if h.conf.KeepAlivePeriod < 0 {
+		// The same "off" the h2 carrier spells this way. quic-go reads zero as
+		// "never send a keep-alive".
+		config.KeepAlivePeriod = 0
+	} else if h.conf.KeepAlivePeriod > 0 {
+		if params.KeepAlivePeriod != 0 && int64(h.conf.KeepAlivePeriod) != params.KeepAlivePeriod {
+			h.warnKeepAliveOnce.Do(func() {
+				errors.LogWarning(context.Background(),
+					`masque: "keepAlivePeriod" is `, h.conf.KeepAlivePeriod,
+					`s in settings and `, params.KeepAlivePeriod,
+					`s in quicSettings; the settings one wins`)
+			})
+		}
+		config.KeepAlivePeriod = time.Duration(h.conf.KeepAlivePeriod) * time.Second
 	}
 	return config, params
 }

@@ -50,6 +50,10 @@ type Handler struct {
 	quicVersion atomic.Int32
 
 	// The tunnel is shared by every connection and brought up on the first one.
+	// quicConfig runs on every dial and from two callers, so the one warning it
+	// can emit is a configuration mistake worth saying once, not once per dial.
+	warnKeepAliveOnce sync.Once
+
 	mu      sync.Mutex
 	tunnel  *tunnel
 	closed  bool
