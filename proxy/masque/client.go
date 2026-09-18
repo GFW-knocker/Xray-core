@@ -54,6 +54,17 @@ type Handler struct {
 	// can emit is a configuration mistake worth saying once, not once per dial.
 	warnKeepAliveOnce sync.Once
 
+	// dialMu serialises dials, so two connections arriving together do not each
+	// open a tunnel. Close deliberately never takes it: a dial can block for a
+	// very long time, and shutting down must not wait for one.
+	dialMu sync.Mutex
+
+	// done is closed by Close, and every dial derives its context from it, so a
+	// dial still waiting on an address that will never answer is abandoned
+	// rather than waited out. Created lazily because Handler is also built
+	// directly in tests.
+	done chan struct{}
+
 	mu      sync.Mutex
 	tunnel  *tunnel
 	closed  bool
@@ -182,6 +193,44 @@ func parseDNSServers(servers []string) ([]netip.Addr, error) {
 // purpose: a hundred connections arriving at once should cost one tunnel, not a
 // hundred attempts at the edge.
 func (h *Handler) session(ctx context.Context) (*tunnel, error) {
+	if t, err := h.liveTunnel(ctx); t != nil || err != nil {
+		return t, err
+	}
+
+	// The dial happens without h.mu held. Holding it here is what used to make
+	// Ctrl+C hang: Close wants the same mutex, and a dial through another tunnel
+	// to an address that never answers has nothing to refuse it, so the process
+	// stayed up for as long as the dial did.
+	h.dialMu.Lock()
+	defer h.dialMu.Unlock()
+
+	// Someone else may have brought one up while this connection waited its turn.
+	if t, err := h.liveTunnel(ctx); t != nil || err != nil {
+		return t, err
+	}
+
+	dialCtx, cancel := h.dialContext(ctx)
+	defer cancel()
+
+	t, err := h.startTunnel(dialCtx)
+	if err != nil {
+		return nil, err
+	}
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.closed {
+		// Closed while this dial was in flight, so nothing owns the tunnel now.
+		t.Close()
+		return nil, errors.New("masque: the outbound is closed")
+	}
+	h.tunnel = t
+	return t, nil
+}
+
+// liveTunnel returns the tunnel currently in use, if there is one worth using.
+// A nil tunnel and a nil error mean one has to be dialled.
+func (h *Handler) liveTunnel(ctx context.Context) (*tunnel, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -195,23 +244,51 @@ func (h *Handler) session(ctx context.Context) (*tunnel, error) {
 		errors.LogInfo(ctx, "masque: the tunnel is gone, opening another")
 		h.tunnel = nil
 	}
+	return nil, nil
+}
 
-	t, err := h.startTunnel(ctx)
-	if err != nil {
-		return nil, err
+// dialContext ties a dial to the outbound's life as well as the caller's, so
+// Close abandons it instead of waiting for whatever timeout it would otherwise
+// run to.
+func (h *Handler) dialContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	h.mu.Lock()
+	if h.done == nil {
+		h.done = make(chan struct{})
 	}
-	h.tunnel = t
-	return t, nil
+	done := h.done
+	h.mu.Unlock()
+
+	dialCtx, cancel := context.WithCancel(ctx)
+	go func() {
+		select {
+		case <-done:
+			cancel()
+		case <-dialCtx.Done():
+		}
+	}()
+	return dialCtx, cancel
 }
 
 // Close implements common.Closable.
 func (h *Handler) Close() error {
 	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.closed = true
-	if h.tunnel != nil {
-		h.tunnel.Close()
-		h.tunnel = nil
+	if h.done == nil {
+		h.done = make(chan struct{})
+	}
+	if !h.closed {
+		h.closed = true
+		// Every dial in flight is watching this, and gives up as soon as it
+		// closes. Guarded by h.closed so a second Close cannot close it twice.
+		close(h.done)
+	}
+	tunnel := h.tunnel
+	h.tunnel = nil
+	h.mu.Unlock()
+
+	// Outside the lock: tearing a tunnel down talks to the network, and nothing
+	// else should be waiting on h.mu while it does.
+	if tunnel != nil {
+		tunnel.Close()
 	}
 	return nil
 }

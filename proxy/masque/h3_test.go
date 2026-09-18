@@ -349,3 +349,34 @@ func TestKeepAlivePeriodReachesTheQUICConfig(t *testing.T) {
 		})
 	}
 }
+
+// A chained dialer's remote address is only a label: every write goes down the
+// stream regardless. It used to be read with an unchecked type assertion, so an
+// address of any other shape -- or none -- panicked, and a panic here takes the
+// whole process with it. On a phone that is the VPN dying.
+func TestChainedRemoteNeverPanics(t *testing.T) {
+	cases := []struct {
+		name string
+		addr xnet.Addr
+		want string
+	}{
+		{"a UDP address is used as it is", &gonet.UDPAddr{IP: gonet.IPv4(1, 2, 3, 4), Port: 443}, "1.2.3.4:443"},
+		{"a TCP address is carried over", &gonet.TCPAddr{IP: gonet.IPv4(5, 6, 7, 8), Port: 8443}, "5.6.7.8:8443"},
+		// What cnc.Connection defaults to when the dialer sets none.
+		{"the wildcard default survives", &gonet.TCPAddr{IP: gonet.IPv4zero, Port: 0}, "0.0.0.0:0"},
+		{"an unknown address falls back", &gonet.UnixAddr{Name: "/tmp/x", Net: "unix"}, "0.0.0.0:0"},
+		{"no address at all falls back", nil, "0.0.0.0:0"},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := chainedRemote(c.addr)
+			if got == nil {
+				t.Fatal("returned nil; quic-go dereferences this")
+			}
+			if got.String() != c.want {
+				t.Errorf("chainedRemote(%v) = %v, want %v", c.addr, got, c.want)
+			}
+		})
+	}
+}

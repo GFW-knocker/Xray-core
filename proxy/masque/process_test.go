@@ -2,6 +2,9 @@ package masque
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"io"
 	"net/netip"
 	"strings"
@@ -13,6 +16,7 @@ import (
 	"github.com/GFW-knocker/Xray-core/common/session"
 	"github.com/GFW-knocker/Xray-core/features/policy"
 	"github.com/GFW-knocker/Xray-core/transport"
+	"github.com/GFW-knocker/Xray-core/transport/internet"
 	"github.com/GFW-knocker/Xray-core/transport/internet/stat"
 	"github.com/GFW-knocker/Xray-core/transport/pipe"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -253,5 +257,79 @@ func TestProcessStopsAfterClose(t *testing.T) {
 	// Closing twice is what a shutdown path does.
 	if err := handler.Close(); err != nil {
 		t.Errorf("second Close: %v", err)
+	}
+}
+
+// Close has to return while a dial is still in flight.
+//
+// The dial can block for a very long time and, when the carrier is itself
+// another masque tunnel, effectively forever: a TCP connect through a netstack
+// to an address that never answers has nothing to refuse it. If Close waits for
+// the dial -- which it does when both take the same mutex -- the process stops
+// responding to Ctrl+C for exactly as long. Reported against two chained masque
+// outbounds where the outer one pointed at a non-Cloudflare address.
+func TestCloseDoesNotWaitForAnInFlightDial(t *testing.T) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	parsed, err := parseAddresses([]string{clientAddress + "/32"})
+	if err != nil {
+		t.Fatalf("parseAddresses: %v", err)
+	}
+
+	// A port nothing listens on, reached through a dialer that simply never
+	// answers, which is what an unreachable endpoint inside a tunnel looks like.
+	blocked := make(chan struct{})
+	defer close(blocked)
+
+	h := &Handler{
+		conf: &Config{
+			Transport:       Config_H2,
+			Authority:       "edge.invalid",
+			Path:            DefaultPath,
+			ConnectProtocol: DefaultConnectProtocol,
+			Mtu:             DefaultMTU,
+		},
+		streamSettings: &internet.MemoryStreamConfig{},
+		endpoint: xnet.Destination{
+			Address: xnet.ParseAddress("198.51.100.1"), // TEST-NET-2, never routes
+			Port:    xnet.Port(443),
+			Network: xnet.Network_TCP,
+		},
+		privateKey: key,
+		addresses:  parsed,
+		mtu:        DefaultMTU,
+		cache:      make(map[string]resolved),
+	}
+
+	dialing := make(chan struct{})
+	dialReturned := make(chan struct{})
+	go func() {
+		close(dialing)
+		// Never returns quickly on its own; the point is that Close must not
+		// wait for it, and that Close makes it give up.
+		h.session(context.Background())
+		close(dialReturned)
+	}()
+	<-dialing
+	time.Sleep(200 * time.Millisecond) // let the dial get under way
+
+	done := make(chan error, 1)
+	go func() { done <- h.Close() }()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Close blocked behind the in-flight dial; Ctrl+C would hang here")
+	}
+
+	// And the dial has to actually stop, not merely stop being waited for. On a
+	// phone the core is stopped and started again constantly, so a dial left
+	// running past Close would hold a socket and a goroutine into the next run.
+	select {
+	case <-dialReturned:
+	case <-time.After(10 * time.Second):
+		t.Error("the dial was still running 10s after Close; it should have been abandoned")
 	}
 }

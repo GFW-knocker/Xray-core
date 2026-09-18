@@ -103,13 +103,20 @@ func (h *Handler) dialPacketConn(ctx context.Context) (net.PacketConn, *net.UDPA
 	var remote *net.UDPAddr
 	switch c := raw.(type) {
 	case *internet.PacketConnWrapper:
+		// A real socket, so the address is where packets actually go and has to
+		// be the one it claims to be.
+		addr, ok := raw.RemoteAddr().(*net.UDPAddr)
+		if !ok {
+			raw.Close()
+			return nil, nil, errors.New("masque: the dialer's remote address is a ",
+				reflect.TypeOf(raw.RemoteAddr()), ", want a UDP address")
+		}
 		pktConn = c.PacketConn
-		remote = raw.RemoteAddr().(*net.UDPAddr)
+		remote = addr
 	case *cnc.Connection:
 		// A chained dialer hands back a stream; QUIC rides it as a single flow.
 		pktConn = &internet.FakePacketConn{Conn: c}
-		addr := c.RemoteAddr().(*net.TCPAddr)
-		remote = &net.UDPAddr{IP: addr.IP, Port: addr.Port}
+		remote = chainedRemote(c.RemoteAddr())
 	default:
 		raw.Close()
 		return nil, nil, errors.New("masque: the dialer returned a ", reflect.TypeOf(c), ", which cannot carry QUIC")
@@ -140,6 +147,29 @@ func (h *Handler) dialPacketConn(ctx context.Context) (net.PacketConn, *net.UDPA
 		}
 	}
 	return pktConn, remote, nil
+}
+
+// chainedRemote is the address quic-go is told it is talking to when the
+// carrier is another outbound rather than a socket.
+//
+// It is a label and nothing more: every write goes down the chained stream
+// whatever this says, and the stream ends wherever that outbound sends it. So
+// an address of an unexpected shape is not worth refusing a working tunnel
+// over, and this takes what it can and falls back to the wildcard otherwise --
+// which is what cnc.Connection itself defaults to when the dialer sets none.
+//
+// It used to be an unchecked type assertion. That is a panic waiting for the
+// day some dialer reports something else or nothing at all, and a panic here
+// takes down the whole process, which on a phone means the VPN with it.
+func chainedRemote(addr net.Addr) *net.UDPAddr {
+	switch a := addr.(type) {
+	case *net.UDPAddr:
+		return a
+	case *net.TCPAddr:
+		return &net.UDPAddr{IP: a.IP, Port: a.Port, Zone: a.Zone}
+	default:
+		return &net.UDPAddr{IP: net.AnyIP.IP()}
+	}
 }
 
 // countingPacketConn feeds the outbound's traffic counters. It measures the
