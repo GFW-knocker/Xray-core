@@ -124,6 +124,12 @@ func (h *Handler) dialPacketConn(ctx context.Context) (net.PacketConn, *net.UDPA
 		pktConn = masked
 	}
 
+	// Outside the masks, so the noise still goes through them and stays additive
+	// with whatever they do, and inside the counters, so junk is not billed as
+	// tunnel traffic any more than mask padding is.
+	config, _ := h.quicConfig()
+	pktConn = h.wrapNoise(ctx, pktConn, config.KeepAlivePeriod)
+
 	// Wrapped after the masks, matching the WireGuard outbound, so the figures
 	// are the tunnel's own traffic rather than what the masks pad it out to.
 	if h.uplinkCounter != nil || h.downlinkCounter != nil {
@@ -241,12 +247,6 @@ func (h *Handler) dialH3(ctx context.Context) (*h3Tunnel, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	// Before QUIC writes anything. This goes through the masked connection, so a
-	// udpmask configured in streamSettings still wraps it and its own noise, if
-	// it has any, still fires on this first write -- the two are additive rather
-	// than alternatives.
-	h.sendNoise(ctx, pktConn, remote)
 
 	config, params := h.quicConfig()
 	quicTr := &quic.Transport{Conn: pktConn, DisableGSO: params.DisableGSO}

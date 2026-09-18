@@ -41,8 +41,23 @@ func (c *recordingPacketConn) ReadFrom([]byte) (int, net.Addr, error) {
 	return 0, nil, stdnet.ErrClosed
 }
 
-func noiseHandler(conf *Config) *Handler {
-	return &Handler{conf: conf}
+// burstFor runs the shipping path -- wrapNoise, then one real write -- and
+// returns just the noise that preceded the marker datagram.
+func burstFor(t *testing.T, conf *Config) [][]byte {
+	t.Helper()
+	recorder := &recordingPacketConn{}
+	conn := (&Handler{conf: conf}).wrapNoise(context.Background(), recorder, 10*time.Second)
+
+	marker := []byte("marker")
+	if _, err := conn.WriteTo(marker, &stdnet.UDPAddr{}); err != nil {
+		t.Fatalf("WriteTo: %v", err)
+	}
+
+	packets := recorder.packets()
+	if len(packets) == 0 || string(packets[len(packets)-1]) != "marker" {
+		t.Fatalf("the marker datagram did not reach the wire last: %q", packets)
+	}
+	return packets[:len(packets)-1]
 }
 
 // What goes on the wire has to match what was asked for, because a primer with
@@ -139,9 +154,7 @@ func TestNoiseSendsTheShapeThatWasAskedFor(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			conn := &recordingPacketConn{}
-			noiseHandler(c.conf).sendNoise(context.Background(), conn, &stdnet.UDPAddr{})
-			c.verify(t, conn.packets())
+			c.verify(t, burstFor(t, c.conf))
 		})
 	}
 }
@@ -156,12 +169,9 @@ func expectSilence(t *testing.T, packets [][]byte) {
 // quicinit is a complete datagram whose size is the whole point, so the payload
 // setting has to be ignored for it rather than appended.
 func TestNoiseIgnoresThePayloadSizeForQUICInit(t *testing.T) {
-	conn := &recordingPacketConn{}
-	noiseHandler(&Config{
+	packets := burstFor(t, &Config{
 		Wnoise: NoiseQUICInit, Wnoisecount: "1", Wnoisedelay: "0", Wpayloadsize: "100",
-	}).sendNoise(context.Background(), conn, &stdnet.UDPAddr{})
-
-	packets := conn.packets()
+	})
 	if len(packets) != 1 {
 		t.Fatalf("sent %d datagrams, want 1", len(packets))
 	}
@@ -223,16 +233,19 @@ func TestNoiseRangesMatchTheWireGuardOutbound(t *testing.T) {
 func TestNoiseGoesThroughTheUdpMask(t *testing.T) {
 	recorder := &recordingPacketConn{}
 	masked := &prefixingPacketConn{PacketConn: recorder, prefix: []byte{0xAB, 0xCD}}
+	conn := (&Handler{conf: &Config{
+		Wnoise: NoiseRandom, Wnoisecount: "2", Wnoisedelay: "0", Wpayloadsize: "16-16",
+	}}).wrapNoise(context.Background(), masked, 10*time.Second)
 
-	noiseHandler(&Config{
-		Wnoise: NoiseRandom, Wnoisecount: "2", Wnoisedelay: "0", Wpayloadsize: "16-16"},
-	).sendNoise(context.Background(), masked, &stdnet.UDPAddr{})
+	if _, err := conn.WriteTo([]byte("marker"), &stdnet.UDPAddr{}); err != nil {
+		t.Fatalf("WriteTo: %v", err)
+	}
 
 	packets := recorder.packets()
-	if len(packets) != 2 {
-		t.Fatalf("the mask saw %d datagrams, want 2", len(packets))
+	if len(packets) != 3 {
+		t.Fatalf("the mask saw %d datagrams, want 2 noise and 1 real", len(packets))
 	}
-	for i, p := range packets {
+	for i, p := range packets[:2] {
 		if !bytes.HasPrefix(p, []byte{0xAB, 0xCD}) {
 			t.Errorf("datagram %d reached the wire as % x, want the mask's prefix on it", i, p[:2])
 		}
@@ -250,4 +263,61 @@ type prefixingPacketConn struct {
 
 func (c *prefixingPacketConn) WriteTo(p []byte, addr net.Addr) (int, error) {
 	return c.PacketConn.WriteTo(append(append([]byte(nil), c.prefix...), p...), addr)
+}
+
+// The point of the wrapper: a burst ahead of the first datagram, nothing ahead
+// of traffic that keeps flowing, and another burst ahead of the datagram that
+// follows a quiet stretch -- which on an idle tunnel is the QUIC keepalive.
+func TestNoiseFiresBeforeTheFirstPacketAndBeforeEachKeepalive(t *testing.T) {
+	recorder := &recordingPacketConn{}
+	conn := &noisePacketConn{
+		PacketConn: recorder,
+		ctx:        context.Background(),
+		noise: parseNoise(&Config{
+			Wnoise: NoiseRandom, Wnoisecount: "2", Wnoisedelay: "0", Wpayloadsize: "32-32",
+		}),
+		gap: 40 * time.Millisecond,
+	}
+
+	real1 := []byte("first")
+	if _, err := conn.WriteTo(real1, &stdnet.UDPAddr{}); err != nil {
+		t.Fatalf("WriteTo: %v", err)
+	}
+	// Back to back: still the same busy stretch, so no new burst.
+	if _, err := conn.WriteTo([]byte("second"), &stdnet.UDPAddr{}); err != nil {
+		t.Fatalf("WriteTo: %v", err)
+	}
+	// Long enough silence that the next datagram is a keepalive.
+	time.Sleep(60 * time.Millisecond)
+	if _, err := conn.WriteTo([]byte("keepalive"), &stdnet.UDPAddr{}); err != nil {
+		t.Fatalf("WriteTo: %v", err)
+	}
+
+	packets := recorder.packets()
+	// 2 noise + first + second + 2 noise + keepalive
+	if len(packets) != 7 {
+		t.Fatalf("wire carried %d datagrams, want 7", len(packets))
+	}
+
+	noiseAt := func(i int) bool { return len(packets[i]) == 32 }
+	for _, i := range []int{0, 1, 4, 5} {
+		if !noiseAt(i) {
+			t.Errorf("datagram %d is %q, want a 32-byte noise datagram", i, packets[i])
+		}
+	}
+	for i, want := range map[int]string{2: "first", 3: "second", 6: "keepalive"} {
+		if string(packets[i]) != want {
+			t.Errorf("datagram %d is %q, want %q", i, packets[i], want)
+		}
+	}
+}
+
+// Noise that is switched off must not wrap the connection at all, so an
+// unconfigured tunnel pays nothing for the feature existing.
+func TestNoiseLeavesTheConnectionAloneWhenItIsOff(t *testing.T) {
+	recorder := &recordingPacketConn{}
+	h := &Handler{conf: &Config{Wnoise: NoiseNone}}
+	if got := h.wrapNoise(context.Background(), recorder, 10*time.Second); got != net.PacketConn(recorder) {
+		t.Error("the connection was wrapped even though wnoise is off")
+	}
 }

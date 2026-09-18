@@ -20,6 +20,7 @@ import (
 	"encoding/hex"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/GFW-knocker/Xray-core/common/crypto"
@@ -252,19 +253,14 @@ func quicInitPacket() []byte {
 	return pkt
 }
 
-// sendNoise puts the configured datagrams on the wire, before anything else
-// does. Failures are logged and ignored: noise that did not go out is a missed
-// chance to prime the path, not a reason to refuse the tunnel.
-func (h *Handler) sendNoise(ctx context.Context, conn net.PacketConn, remote net.Addr) {
-	noise := parseNoise(h.conf)
-	if !noise.enabled() {
-		return
-	}
-
-	count := int(crypto.RandBetween(int64(noise.countFrom), int64(noise.countTo)))
+// send puts the configured datagrams on the wire. Failures are logged and
+// ignored: noise that did not go out is a missed chance to prime the path, not a
+// reason to refuse the tunnel.
+func (c *noiseConfig) send(ctx context.Context, conn net.PacketConn, remote net.Addr, why string) {
+	count := int(crypto.RandBetween(int64(c.countFrom), int64(c.countTo)))
 	sent := 0
 	for i := 0; i < count; i++ {
-		packet := noise.datagram()
+		packet := c.datagram()
 		if packet == nil {
 			continue
 		}
@@ -273,9 +269,85 @@ func (h *Handler) sendNoise(ctx context.Context, conn net.PacketConn, remote net
 			continue
 		}
 		sent++
-		if noise.delayTo > 0 {
-			time.Sleep(time.Duration(crypto.RandBetween(int64(noise.delayFrom), int64(noise.delayTo))) * time.Millisecond)
+		if c.delayTo > 0 {
+			time.Sleep(time.Duration(crypto.RandBetween(int64(c.delayFrom), int64(c.delayTo))) * time.Millisecond)
 		}
 	}
-	errors.LogDebug(ctx, "masque: sent ", sent, " noise datagrams as \"", noise.gen, "\" before the handshake")
+	errors.LogDebug(ctx, "masque: sent ", sent, " noise datagrams as \"", c.gen, "\" ", why)
+}
+
+// noisePacketConn puts a burst ahead of the first datagram of the connection and
+// ahead of any datagram that follows a quiet stretch.
+//
+// That second case is the QUIC keepalive, and it is why this wraps the
+// connection rather than sitting on a timer of its own. The WireGuard outbound
+// calls its noise from the top of SendKeepalive, so the junk and the keepalive
+// leave together and in that order; quic-go keeps its keepalive to itself and
+// offers no such hook. What it cannot hide is the write: once the tunnel has
+// been quiet for about a keepalive period, the next datagram out *is* the
+// keepalive, so intercepting the write gets the same ordering without reaching
+// into quic-go.
+//
+// Real traffic resuming after an equally long pause is caught too. That is not a
+// miss: a flow going quiet and then starting again is exactly the moment a
+// classifier looks at it, and it is the moment the noise is for.
+//
+// The burst is synchronous, so it delays the datagram behind it by however long
+// "wnoisecount" times "wnoisedelay" comes to -- about 20ms with the defaults,
+// and worth remembering before setting either of them high.
+type noisePacketConn struct {
+	net.PacketConn
+	ctx   context.Context
+	noise *noiseConfig
+	// gap is how long a silence has to be before the next datagram is taken for
+	// a keepalive.
+	gap time.Duration
+
+	// last is when the previous datagram went out, in nanoseconds, and zero
+	// before the first one. An atomic rather than a mutex because this is on the
+	// path of every datagram the tunnel sends: swapping it is one instruction
+	// and, unlike a lock, costs nothing extra when quic-go writes from more than
+	// one goroutine.
+	last atomic.Int64
+}
+
+func (c *noisePacketConn) WriteTo(p []byte, addr net.Addr) (int, error) {
+	// One swap decides it, and it is also what makes concurrent writers safe:
+	// whichever goroutine gets here first takes the old timestamp and sends the
+	// burst, and every other one reads a timestamp from just now and does not.
+	now := time.Now().UnixNano()
+	previous := c.last.Swap(now)
+
+	first := previous == 0
+	if first || now-previous >= int64(c.gap) {
+		why := "before a keepalive"
+		if first {
+			why = "before the handshake"
+		}
+		// Straight to the connection underneath, so the burst does not come back
+		// through here and reset the clock on itself.
+		c.noise.send(c.ctx, c.PacketConn, addr, why)
+		// The burst takes time of its own, so the real datagram is not late by
+		// the gap even though it leaves after it.
+		c.last.Store(time.Now().UnixNano())
+	}
+	return c.PacketConn.WriteTo(p, addr)
+}
+
+// wrapNoise installs the built-in noise, when any is configured.
+//
+// The gap is three quarters of the keepalive period: long enough that ordinary
+// back-to-back traffic never trips it, short enough that the keepalive, which
+// arrives one whole period after the last datagram, always does.
+func (h *Handler) wrapNoise(ctx context.Context, conn net.PacketConn, keepAlive time.Duration) net.PacketConn {
+	noise := parseNoise(h.conf)
+	if !noise.enabled() {
+		return conn
+	}
+	return &noisePacketConn{
+		PacketConn: conn,
+		ctx:        ctx,
+		noise:      noise,
+		gap:        keepAlive * 3 / 4,
+	}
 }
