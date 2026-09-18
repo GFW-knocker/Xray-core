@@ -227,6 +227,11 @@ func (h *Handler) quicConfig() (*quic.Config, *internet.QuicParams) {
 		// 162.159.198.1:443, parrot on gave "handshake did not complete in time"
 		// every time and parrot off connected in ~370 ms.
 	}
+	// Left at zero this is quic-go's own default, so an unchained tunnel keeps
+	// the packet size it has always used.
+	if size := h.packetSize(); size > 0 {
+		config.InitialPacketSize = uint16(size)
+	}
 	if config.MaxIdleTimeout == 0 {
 		config.MaxIdleTimeout = net.ConnIdleTimeout
 	}

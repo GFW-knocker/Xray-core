@@ -219,12 +219,21 @@ type Config struct {
 	// through the masked connection, so whatever the mask does to real traffic it
 	// does to the noise too. Both can be used at once and neither disables the
 	// other.
-	Wnoise        string `protobuf:"bytes,15,opt,name=wnoise,proto3" json:"wnoise,omitempty"`
-	Wnoisecount   string `protobuf:"bytes,16,opt,name=wnoisecount,proto3" json:"wnoisecount,omitempty"`
-	Wnoisedelay   string `protobuf:"bytes,17,opt,name=wnoisedelay,proto3" json:"wnoisedelay,omitempty"`
-	Wpayloadsize  string `protobuf:"bytes,18,opt,name=wpayloadsize,proto3" json:"wpayloadsize,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Wnoise       string `protobuf:"bytes,15,opt,name=wnoise,proto3" json:"wnoise,omitempty"`
+	Wnoisecount  string `protobuf:"bytes,16,opt,name=wnoisecount,proto3" json:"wnoisecount,omitempty"`
+	Wnoisedelay  string `protobuf:"bytes,17,opt,name=wnoisedelay,proto3" json:"wnoisedelay,omitempty"`
+	Wpayloadsize string `protobuf:"bytes,18,opt,name=wpayloadsize,proto3" json:"wpayloadsize,omitempty"`
+	// The size of the QUIC packets this tunnel sends, HTTP/3 only. Zero leaves it
+	// to quic-go except on a chained tunnel, which derives its own -- see
+	// initialPacketSize in config.go.
+	//
+	// It exists because a tunnel carrying another tunnel has to be told to: the
+	// packets it must carry are bigger than the ones quic-go sizes itself for,
+	// and the tunnel doing the carrying cannot tell that anything is chained
+	// through it.
+	InitialPacketSize int32 `protobuf:"varint,19,opt,name=initial_packet_size,json=initialPacketSize,proto3" json:"initial_packet_size,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *Config) Reset() {
@@ -383,11 +392,18 @@ func (x *Config) GetWpayloadsize() string {
 	return ""
 }
 
+func (x *Config) GetInitialPacketSize() int32 {
+	if x != nil {
+		return x.InitialPacketSize
+	}
+	return 0
+}
+
 var File_proxy_masque_config_proto protoreflect.FileDescriptor
 
 const file_proxy_masque_config_proto_rawDesc = "" +
 	"\n" +
-	"\x19proxy/masque/config.proto\x12\x11xray.proxy.masque\"\xaf\x06\n" +
+	"\x19proxy/masque/config.proto\x12\x11xray.proxy.masque\"\xdf\x06\n" +
 	"\x06Config\x12\x1a\n" +
 	"\bendpoint\x18\x01 \x01(\tR\bendpoint\x12\x18\n" +
 	"\aaddress\x18\x02 \x03(\tR\aaddress\x12\x1f\n" +
@@ -408,7 +424,8 @@ const file_proxy_masque_config_proto_rawDesc = "" +
 	"\x06wnoise\x18\x0f \x01(\tR\x06wnoise\x12 \n" +
 	"\vwnoisecount\x18\x10 \x01(\tR\vwnoisecount\x12 \n" +
 	"\vwnoisedelay\x18\x11 \x01(\tR\vwnoisedelay\x12\"\n" +
-	"\fwpayloadsize\x18\x12 \x01(\tR\fwpayloadsize\"\\\n" +
+	"\fwpayloadsize\x18\x12 \x01(\tR\fwpayloadsize\x12.\n" +
+	"\x13initial_packet_size\x18\x13 \x01(\x05R\x11initialPacketSize\"\\\n" +
 	"\x0eDomainStrategy\x12\f\n" +
 	"\bFORCE_IP\x10\x00\x12\r\n" +
 	"\tFORCE_IP4\x10\x01\x12\r\n" +

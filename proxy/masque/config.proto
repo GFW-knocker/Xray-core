@@ -131,4 +131,14 @@ message Config {
   string wnoisecount = 16;
   string wnoisedelay = 17;
   string wpayloadsize = 18;
+
+  // The size of the QUIC packets this tunnel sends, HTTP/3 only. Zero leaves it
+  // to quic-go except on a chained tunnel, which derives its own -- see
+  // initialPacketSize in config.go.
+  //
+  // It exists because a tunnel carrying another tunnel has to be told to: the
+  // packets it must carry are bigger than the ones quic-go sizes itself for,
+  // and the tunnel doing the carrying cannot tell that anything is chained
+  // through it.
+  int32 initial_packet_size = 19;
 }

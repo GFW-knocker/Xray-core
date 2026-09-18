@@ -45,6 +45,10 @@ type Handler struct {
 	dnsServers []netip.Addr
 	mtu        int
 
+	// The QUIC packet size for the h3 carrier, or zero to leave it to quic-go.
+	// Set from "initialPacketSize", or derived when this tunnel is chained.
+	packetSizeSetting int
+
 	// Which quicdial attempt last connected to this edge, so the version
 	// fallback is paid for once rather than on every dial.
 	quicVersion atomic.Int32
@@ -113,6 +117,8 @@ func NewClient(ctx context.Context, conf *Config) (*Handler, error) {
 		return nil, err
 	}
 	h.mtu = int(conf.Mtu)
+	h.packetSizeSetting = int(conf.InitialPacketSize)
+	h.applyChainedBudget(conf)
 
 	tag := session.FullHandlerFromContext(ctx).Tag()
 	if len(tag) > 0 && p.ForSystem().Stats.OutboundUplink {
@@ -532,4 +538,50 @@ func (c *udpConn) WriteMultiBuffer(mb buf.MultiBuffer) error {
 		b.Release()
 	}
 	return nil
+}
+
+// applyChainedBudget sizes an h3 tunnel that is dialled through another
+// outbound, where its packets are not packets on a wire but payload inside
+// somebody else's tunnel.
+//
+// Both numbers have to move together, which is the part that is easy to get
+// wrong. Making the packets small enough to be carried is no use if this
+// tunnel's own interface still hands it packets that are too big to send, and
+// vice versa. Left half done the tunnel comes up, carries small requests, and
+// silently loses anything that fills a packet.
+//
+// Only h3 needs this. An h2 carrier writes capsules to a TCP stream, which
+// takes any length.
+func (h *Handler) applyChainedBudget(conf *Config) {
+	if conf.Transport != Config_H3 || !h.isChained() {
+		return
+	}
+	if h.packetSizeSetting == 0 {
+		// The tunnel underneath is another outbound whose MTU this one cannot
+		// see, so assume the default every masque tunnel is built with.
+		h.packetSizeSetting = chainedPacketSize(DefaultMTU, h.endpoint.Address.Family().IsIPv6())
+	}
+	if h.mtu == DefaultMTU {
+		// DefaultMTU is what an unset "mtu" becomes, and it is also a value no
+		// chained h3 tunnel can use: its packets would not fit the tunnel
+		// underneath. Deriving one that does is better than carrying nothing.
+		h.mtu = chainedMTU(h.packetSizeSetting)
+		errors.LogInfo(context.Background(), "masque: chained through ",
+			h.streamSettings.SocketSettings.DialerProxy, ", so sending ",
+			h.packetSizeSetting, " byte packets at mtu ", h.mtu)
+	}
+}
+
+// isChained reports whether this outbound dials through another one.
+func (h *Handler) isChained() bool {
+	ss := h.streamSettings.SocketSettings
+	return ss != nil && ss.DialerProxy != ""
+}
+
+// packetSize is the QUIC packet size to ask quic-go for, or zero for its own.
+func (h *Handler) packetSize() int {
+	if h.packetSizeSetting == 0 {
+		return 0
+	}
+	return clampPacketSize(h.packetSizeSetting)
 }

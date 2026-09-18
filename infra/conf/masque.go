@@ -20,8 +20,17 @@ type MasqueConfig struct {
 	Path            string   `json:"path"`
 	ConnectProtocol string   `json:"connectProtocol"`
 	MTU             int32    `json:"mtu"`
-	DNS             []string `json:"remoteDNS"`
-	DomainStrategy  string   `json:"domainStrategy"`
+
+	// The size of the QUIC packets this tunnel sends, HTTP/3 only. Unset leaves
+	// it to quic-go, except on a tunnel chained through another outbound, which
+	// derives a size that fits the tunnel underneath.
+	//
+	// Set it to MaxPacketSize on a tunnel that carries another one: quic-go's
+	// own size is too small to hold a chained tunnel's packets, and nothing
+	// tells the carrier it is carrying anything.
+	InitialPacketSize int32    `json:"initialPacketSize"`
+	DNS               []string `json:"remoteDNS"`
+	DomainStrategy    string   `json:"domainStrategy"`
 
 	// Seconds. KeepAlivePeriod covers both carriers: it is the HTTP/2 PING
 	// interval, and on HTTP/3 it overrides quicSettings' keepAlivePeriod.
@@ -87,6 +96,16 @@ func (c *MasqueConfig) Build() (proto.Message, error) {
 	if config.Mtu == 0 {
 		config.Mtu = masque.DefaultMTU
 	}
+
+	// Checked here rather than clamped silently: a size outside this range is a
+	// mistake worth hearing about, and the two ends of it are QUIC's floor and
+	// what a carrying tunnel needs.
+	if c.InitialPacketSize != 0 &&
+		(c.InitialPacketSize < masque.MinPacketSize || c.InitialPacketSize > masque.MaxPacketSize) {
+		return nil, errors.New(`MASQUE "initialPacketSize" must be between `,
+			masque.MinPacketSize, " and ", masque.MaxPacketSize)
+	}
+	config.InitialPacketSize = c.InitialPacketSize
 	config.Wnoise = c.Wnoise
 	config.Wnoisecount = c.Wnoisecount
 	config.Wnoisedelay = c.Wnoisedelay
