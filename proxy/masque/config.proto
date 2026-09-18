@@ -87,4 +87,20 @@ message Config {
   // the same key; streamSettings' own pinnedPeerCertSha256 hashes the whole
   // certificate and does not.
   repeated string pinned_peer_public_key_sha256 = 12;
+
+  // How often the HTTP/2 carrier sends a PING, in seconds, and how long it
+  // waits for the answer before giving the tunnel up.
+  //
+  // HTTP/3 does not read these: QUIC has a keepalive of its own, configured
+  // like every other QUIC outbound's through streamSettings' quicSettings.
+  // HTTP/2 has nothing equivalent, and without a ping it puts no bytes on the
+  // wire at all while idle. That costs two things: a NAT may drop the mapping,
+  // and -- the one that actually bites -- a connection the edge or a middlebox
+  // has silently dropped is not noticed until the next write, which is some
+  // user's connection failing rather than a reconnect.
+  //
+  // Zero takes the defaults, which are the reference client's: ping every 15s,
+  // give up after 20s without an answer. A negative period turns the ping off.
+  int32 keep_alive_period = 13;
+  int32 keep_alive_timeout = 14;
 }

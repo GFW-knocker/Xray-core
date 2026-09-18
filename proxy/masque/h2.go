@@ -158,9 +158,19 @@ func (h *Handler) dialH2(ctx context.Context) (*h2Tunnel, error) {
 	requestCtx, cancel := context.WithCancel(context.Background())
 	tunnel := &h2Tunnel{conn: conn, cancel: cancel}
 
-	// DisableCompression only to keep "accept-encoding: gzip" off a request that
-	// is not fetching anything. Nothing here would decompress.
-	tunnel.client, err = (&http2.Transport{DisableCompression: true}).NewClientConn(conn)
+	period, timeout := h.conf.keepAlive()
+	transport := &http2.Transport{
+		// DisableCompression only to keep "accept-encoding: gzip" off a request
+		// that is not fetching anything. Nothing here would decompress.
+		DisableCompression: true,
+		// ReadIdleTimeout is the ping interval despite the name: the transport
+		// sends a PING once this long passes with nothing read. Left at zero it
+		// performs no health check at all, which is the stock default and is
+		// wrong for a tunnel that can sit idle for minutes.
+		ReadIdleTimeout: period,
+		PingTimeout:     timeout,
+	}
+	tunnel.client, err = transport.NewClientConn(conn)
 	if err != nil {
 		tunnel.Close()
 		return nil, errors.New("masque: failed to start HTTP/2 with ", h.endpoint).Base(err)

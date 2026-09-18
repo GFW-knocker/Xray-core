@@ -144,6 +144,18 @@ func TestMasqueConfigRejectsBadInput(t *testing.T) {
 			&conf.MasqueConfig{Endpoint: "1.2.3.4:443", PrivateKey: good, PinnedPeerPublicKeySha256: []string{"aabbcc"}},
 			"bytes",
 		},
+		{
+			"negative keepalive timeout",
+			&conf.MasqueConfig{Endpoint: "1.2.3.4:443", PrivateKey: good, KeepAliveTimeout: -1},
+			"keepAliveTimeout",
+		},
+		{
+			// A timeout shorter than the interval can never be met, so every
+			// ping would declare the tunnel dead.
+			"keepalive timeout shorter than the period",
+			&conf.MasqueConfig{Endpoint: "1.2.3.4:443", PrivateKey: good, KeepAlivePeriod: 30, KeepAliveTimeout: 5},
+			"shorter than",
+		},
 	}
 
 	for _, c := range cases {

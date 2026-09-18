@@ -23,6 +23,11 @@ type MasqueConfig struct {
 	DNS             []string `json:"remoteDNS"`
 	DomainStrategy  string   `json:"domainStrategy"`
 
+	// Seconds. Both drive the HTTP/2 carrier's PING; HTTP/3 keeps its keepalive
+	// in streamSettings' quicSettings like every other QUIC outbound.
+	KeepAlivePeriod  int32 `json:"keepAlivePeriod"`
+	KeepAliveTimeout int32 `json:"keepAliveTimeout"`
+
 	PinnedPeerPublicKeySha256 []string `json:"pinnedPeerPublicKeySha256"`
 }
 
@@ -73,6 +78,21 @@ func (c *MasqueConfig) Build() (proto.Message, error) {
 	if config.Mtu == 0 {
 		config.Mtu = masque.DefaultMTU
 	}
+	config.KeepAlivePeriod = c.KeepAlivePeriod
+	config.KeepAliveTimeout = c.KeepAliveTimeout
+	// A negative period is the documented way to ask for no ping. A negative
+	// timeout means nothing, and silently reading it as "use the default" would
+	// hide a typo in the one setting whose job is noticing a dead tunnel.
+	if config.KeepAliveTimeout < 0 {
+		return nil, errors.New(`MASQUE "keepAliveTimeout" cannot be negative: `, config.KeepAliveTimeout)
+	}
+	if config.KeepAlivePeriod > 0 && config.KeepAliveTimeout > 0 &&
+		config.KeepAliveTimeout < config.KeepAlivePeriod {
+		return nil, errors.New(`MASQUE "keepAliveTimeout" (`, config.KeepAliveTimeout,
+			`s) is shorter than "keepAlivePeriod" (`, config.KeepAlivePeriod,
+			`s), so every ping would time out before the next one is due`)
+	}
+
 	if config.Mtu < 576 || config.Mtu > 65535 {
 		return nil, errors.New(`MASQUE "mtu" is out of range: `, config.Mtu)
 	}

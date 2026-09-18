@@ -181,8 +181,23 @@ type Config struct {
 	// the same key; streamSettings' own pinnedPeerCertSha256 hashes the whole
 	// certificate and does not.
 	PinnedPeerPublicKeySha256 []string `protobuf:"bytes,12,rep,name=pinned_peer_public_key_sha256,json=pinnedPeerPublicKeySha256,proto3" json:"pinned_peer_public_key_sha256,omitempty"`
-	unknownFields             protoimpl.UnknownFields
-	sizeCache                 protoimpl.SizeCache
+	// How often the HTTP/2 carrier sends a PING, in seconds, and how long it
+	// waits for the answer before giving the tunnel up.
+	//
+	// HTTP/3 does not read these: QUIC has a keepalive of its own, configured
+	// like every other QUIC outbound's through streamSettings' quicSettings.
+	// HTTP/2 has nothing equivalent, and without a ping it puts no bytes on the
+	// wire at all while idle. That costs two things: a NAT may drop the mapping,
+	// and -- the one that actually bites -- a connection the edge or a middlebox
+	// has silently dropped is not noticed until the next write, which is some
+	// user's connection failing rather than a reconnect.
+	//
+	// Zero takes the defaults, which are the reference client's: ping every 15s,
+	// give up after 20s without an answer. A negative period turns the ping off.
+	KeepAlivePeriod  int32 `protobuf:"varint,13,opt,name=keep_alive_period,json=keepAlivePeriod,proto3" json:"keep_alive_period,omitempty"`
+	KeepAliveTimeout int32 `protobuf:"varint,14,opt,name=keep_alive_timeout,json=keepAliveTimeout,proto3" json:"keep_alive_timeout,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *Config) Reset() {
@@ -299,11 +314,25 @@ func (x *Config) GetPinnedPeerPublicKeySha256() []string {
 	return nil
 }
 
+func (x *Config) GetKeepAlivePeriod() int32 {
+	if x != nil {
+		return x.KeepAlivePeriod
+	}
+	return 0
+}
+
+func (x *Config) GetKeepAliveTimeout() int32 {
+	if x != nil {
+		return x.KeepAliveTimeout
+	}
+	return 0
+}
+
 var File_proxy_masque_config_proto protoreflect.FileDescriptor
 
 const file_proxy_masque_config_proto_rawDesc = "" +
 	"\n" +
-	"\x19proxy/masque/config.proto\x12\x11xray.proxy.masque\"\xd5\x04\n" +
+	"\x19proxy/masque/config.proto\x12\x11xray.proxy.masque\"\xaf\x05\n" +
 	"\x06Config\x12\x1a\n" +
 	"\bendpoint\x18\x01 \x01(\tR\bendpoint\x12\x18\n" +
 	"\aaddress\x18\x02 \x03(\tR\aaddress\x12\x1f\n" +
@@ -318,7 +347,9 @@ const file_proxy_masque_config_proto_rawDesc = "" +
 	"\x03DNS\x18\n" +
 	" \x03(\tR\x03DNS\x12Q\n" +
 	"\x0fdomain_strategy\x18\v \x01(\x0e2(.xray.proxy.masque.Config.DomainStrategyR\x0edomainStrategy\x12@\n" +
-	"\x1dpinned_peer_public_key_sha256\x18\f \x03(\tR\x19pinnedPeerPublicKeySha256\"\\\n" +
+	"\x1dpinned_peer_public_key_sha256\x18\f \x03(\tR\x19pinnedPeerPublicKeySha256\x12*\n" +
+	"\x11keep_alive_period\x18\r \x01(\x05R\x0fkeepAlivePeriod\x12,\n" +
+	"\x12keep_alive_timeout\x18\x0e \x01(\x05R\x10keepAliveTimeout\"\\\n" +
 	"\x0eDomainStrategy\x12\f\n" +
 	"\bFORCE_IP\x10\x00\x12\r\n" +
 	"\tFORCE_IP4\x10\x01\x12\r\n" +

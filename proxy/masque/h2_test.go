@@ -334,3 +334,34 @@ func fragmentMaskSettings() *internet.MemoryStreamConfig {
 		TcpmaskManager: finalmask.NewTcpmaskManager([]finalmask.Tcpmask{config}),
 	}
 }
+
+// The HTTP/2 carrier is the only one without a keepalive of its own, so what
+// this resolves to is the whole of its liveness story.
+func TestKeepAliveResolvesToTheRightPair(t *testing.T) {
+	cases := []struct {
+		name            string
+		period, timeout int32
+		wantPeriod      time.Duration
+		wantTimeout     time.Duration
+	}{
+		{"unset takes the reference client's numbers", 0, 0, DefaultKeepAlivePeriod, DefaultKeepAliveTimeout},
+		{"a period on its own keeps the default timeout", 30, 0, 30 * time.Second, DefaultKeepAliveTimeout},
+		{"a timeout on its own keeps the default period", 0, 45, DefaultKeepAlivePeriod, 45 * time.Second},
+		{"both set are both used", 5, 7, 5 * time.Second, 7 * time.Second},
+		// x/net/http2 reads a zero ReadIdleTimeout as "no health check", which
+		// is how a negative period turns the ping off.
+		{"a negative period turns the ping off", -1, 0, 0, DefaultKeepAliveTimeout},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			period, timeout := (&Config{KeepAlivePeriod: c.period, KeepAliveTimeout: c.timeout}).keepAlive()
+			if period != c.wantPeriod {
+				t.Errorf("period = %v, want %v", period, c.wantPeriod)
+			}
+			if timeout != c.wantTimeout {
+				t.Errorf("timeout = %v, want %v", timeout, c.wantTimeout)
+			}
+		})
+	}
+}
