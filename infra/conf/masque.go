@@ -28,6 +28,13 @@ type MasqueConfig struct {
 	KeepAlivePeriod  int32 `json:"keepAlivePeriod"`
 	KeepAliveTimeout int32 `json:"keepAliveTimeout"`
 
+	// Built-in noise ahead of the QUIC handshake, HTTP/3 only. Same names and
+	// meanings as the WireGuard outbound's, and additive with any udpmask.
+	Wnoise       string `json:"wnoise"`
+	Wnoisecount  string `json:"wnoisecount"`
+	Wnoisedelay  string `json:"wnoisedelay"`
+	Wpayloadsize string `json:"wpayloadsize"`
+
 	PinnedPeerPublicKeySha256 []string `json:"pinnedPeerPublicKeySha256"`
 }
 
@@ -78,6 +85,11 @@ func (c *MasqueConfig) Build() (proto.Message, error) {
 	if config.Mtu == 0 {
 		config.Mtu = masque.DefaultMTU
 	}
+	config.Wnoise = c.Wnoise
+	config.Wnoisecount = c.Wnoisecount
+	config.Wnoisedelay = c.Wnoisedelay
+	config.Wpayloadsize = c.Wpayloadsize
+
 	config.KeepAlivePeriod = c.KeepAlivePeriod
 	config.KeepAliveTimeout = c.KeepAliveTimeout
 	// A negative period is the documented way to ask for no ping. A negative

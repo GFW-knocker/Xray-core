@@ -103,4 +103,23 @@ message Config {
   // give up after 20s without an answer. A negative period turns the ping off.
   int32 keep_alive_period = 13;
   int32 keep_alive_timeout = 14;
+
+  // Built-in noise: datagrams sent ahead of the QUIC handshake, HTTP/3 only.
+  //
+  // Same four names and the same meanings as the WireGuard outbound, so a
+  // profile that works there transfers unchanged. "wnoise" is a generator name
+  // -- "none", "quic", "quicv1", "quicinit", "random" -- or a hex literal to use
+  // as the head of each datagram. The rest are "N" or "N-M" ranges: how many
+  // datagrams, how long to wait between them in milliseconds, and how many
+  // random bytes to append.
+  //
+  // This is deliberately independent of the udpmasks. A mask configured in
+  // streamSettings still runs, and runs around these: the noise here is written
+  // through the masked connection, so whatever the mask does to real traffic it
+  // does to the noise too. Both can be used at once and neither disables the
+  // other.
+  string wnoise = 15;
+  string wnoisecount = 16;
+  string wnoisedelay = 17;
+  string wpayloadsize = 18;
 }

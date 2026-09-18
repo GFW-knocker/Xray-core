@@ -196,8 +196,26 @@ type Config struct {
 	// give up after 20s without an answer. A negative period turns the ping off.
 	KeepAlivePeriod  int32 `protobuf:"varint,13,opt,name=keep_alive_period,json=keepAlivePeriod,proto3" json:"keep_alive_period,omitempty"`
 	KeepAliveTimeout int32 `protobuf:"varint,14,opt,name=keep_alive_timeout,json=keepAliveTimeout,proto3" json:"keep_alive_timeout,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// Built-in noise: datagrams sent ahead of the QUIC handshake, HTTP/3 only.
+	//
+	// Same four names and the same meanings as the WireGuard outbound, so a
+	// profile that works there transfers unchanged. "wnoise" is a generator name
+	// -- "none", "quic", "quicv1", "quicinit", "random" -- or a hex literal to use
+	// as the head of each datagram. The rest are "N" or "N-M" ranges: how many
+	// datagrams, how long to wait between them in milliseconds, and how many
+	// random bytes to append.
+	//
+	// This is deliberately independent of the udpmasks. A mask configured in
+	// streamSettings still runs, and runs around these: the noise here is written
+	// through the masked connection, so whatever the mask does to real traffic it
+	// does to the noise too. Both can be used at once and neither disables the
+	// other.
+	Wnoise        string `protobuf:"bytes,15,opt,name=wnoise,proto3" json:"wnoise,omitempty"`
+	Wnoisecount   string `protobuf:"bytes,16,opt,name=wnoisecount,proto3" json:"wnoisecount,omitempty"`
+	Wnoisedelay   string `protobuf:"bytes,17,opt,name=wnoisedelay,proto3" json:"wnoisedelay,omitempty"`
+	Wpayloadsize  string `protobuf:"bytes,18,opt,name=wpayloadsize,proto3" json:"wpayloadsize,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Config) Reset() {
@@ -328,11 +346,39 @@ func (x *Config) GetKeepAliveTimeout() int32 {
 	return 0
 }
 
+func (x *Config) GetWnoise() string {
+	if x != nil {
+		return x.Wnoise
+	}
+	return ""
+}
+
+func (x *Config) GetWnoisecount() string {
+	if x != nil {
+		return x.Wnoisecount
+	}
+	return ""
+}
+
+func (x *Config) GetWnoisedelay() string {
+	if x != nil {
+		return x.Wnoisedelay
+	}
+	return ""
+}
+
+func (x *Config) GetWpayloadsize() string {
+	if x != nil {
+		return x.Wpayloadsize
+	}
+	return ""
+}
+
 var File_proxy_masque_config_proto protoreflect.FileDescriptor
 
 const file_proxy_masque_config_proto_rawDesc = "" +
 	"\n" +
-	"\x19proxy/masque/config.proto\x12\x11xray.proxy.masque\"\xaf\x05\n" +
+	"\x19proxy/masque/config.proto\x12\x11xray.proxy.masque\"\xaf\x06\n" +
 	"\x06Config\x12\x1a\n" +
 	"\bendpoint\x18\x01 \x01(\tR\bendpoint\x12\x18\n" +
 	"\aaddress\x18\x02 \x03(\tR\aaddress\x12\x1f\n" +
@@ -349,7 +395,11 @@ const file_proxy_masque_config_proto_rawDesc = "" +
 	"\x0fdomain_strategy\x18\v \x01(\x0e2(.xray.proxy.masque.Config.DomainStrategyR\x0edomainStrategy\x12@\n" +
 	"\x1dpinned_peer_public_key_sha256\x18\f \x03(\tR\x19pinnedPeerPublicKeySha256\x12*\n" +
 	"\x11keep_alive_period\x18\r \x01(\x05R\x0fkeepAlivePeriod\x12,\n" +
-	"\x12keep_alive_timeout\x18\x0e \x01(\x05R\x10keepAliveTimeout\"\\\n" +
+	"\x12keep_alive_timeout\x18\x0e \x01(\x05R\x10keepAliveTimeout\x12\x16\n" +
+	"\x06wnoise\x18\x0f \x01(\tR\x06wnoise\x12 \n" +
+	"\vwnoisecount\x18\x10 \x01(\tR\vwnoisecount\x12 \n" +
+	"\vwnoisedelay\x18\x11 \x01(\tR\vwnoisedelay\x12\"\n" +
+	"\fwpayloadsize\x18\x12 \x01(\tR\fwpayloadsize\"\\\n" +
 	"\x0eDomainStrategy\x12\f\n" +
 	"\bFORCE_IP\x10\x00\x12\r\n" +
 	"\tFORCE_IP4\x10\x01\x12\r\n" +

@@ -242,6 +242,12 @@ func (h *Handler) dialH3(ctx context.Context) (*h3Tunnel, error) {
 		return nil, err
 	}
 
+	// Before QUIC writes anything. This goes through the masked connection, so a
+	// udpmask configured in streamSettings still wraps it and its own noise, if
+	// it has any, still fires on this first write -- the two are additive rather
+	// than alternatives.
+	h.sendNoise(ctx, pktConn, remote)
+
 	config, params := h.quicConfig()
 	quicTr := &quic.Transport{Conn: pktConn, DisableGSO: params.DisableGSO}
 
