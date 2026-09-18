@@ -192,22 +192,30 @@ func TestNoiseRangesMatchTheWireGuardOutbound(t *testing.T) {
 		{
 			"a single number is a range of one",
 			&Config{Wnoise: NoiseRandom, Wnoisecount: "7", Wnoisedelay: "3", Wpayloadsize: "9"},
-			[2]int{7, 7}, [2]int{3, 3}, [2]int{9, 9},
+			[2]int{7, 7},
+			[2]int{3, 3},
+			[2]int{9, 9},
 		},
 		{
 			"a reversed range is put the right way round",
 			&Config{Wnoise: NoiseRandom, Wnoisecount: "9-2"},
-			[2]int{2, 9}, [2]int{5, 10}, [2]int{5, 10},
+			[2]int{2, 9},
+			[2]int{5, 10},
+			[2]int{5, 10},
 		},
 		{
 			"out of range values are capped, not rejected",
 			&Config{Wnoise: NoiseRandom, Wnoisecount: "999", Wnoisedelay: "999", Wpayloadsize: "999"},
-			[2]int{maxNoiseCount, maxNoiseCount}, [2]int{maxNoiseDelay, maxNoiseDelay}, [2]int{maxPayloadSize, maxPayloadSize},
+			[2]int{maxNoiseCount, maxNoiseCount},
+			[2]int{maxNoiseDelay, maxNoiseDelay},
+			[2]int{maxPayloadSize, maxPayloadSize},
 		},
 		{
 			"nonsense falls back to the defaults rather than failing",
 			&Config{Wnoise: NoiseRandom, Wnoisecount: "abc", Wnoisedelay: "x-y", Wpayloadsize: ""},
-			[2]int{1, 2}, [2]int{5, 10}, [2]int{5, 10},
+			[2]int{1, 2},
+			[2]int{5, 10},
+			[2]int{5, 10},
 		},
 	}
 
