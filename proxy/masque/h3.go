@@ -366,11 +366,27 @@ func (t *h3Tunnel) Close() error {
 	if t.conn != nil {
 		t.conn.CloseWithError(0, "")
 	}
-	if t.quicTr != nil {
-		t.quicTr.Close()
-	}
+	// The packet conn has to go before the transport, and the order is not a
+	// matter of taste.
+	//
+	// quic-go never closes a PacketConn it did not create itself. Transport.Close
+	// unblocks the read loop by calling SetReadDeadline on it and then waits for
+	// that loop to return. When the carrier is a real UDP socket the deadline
+	// does wake the reader and the wait is over at once. When this outbound is
+	// chained through another one -- sockopt.dialerProxy -- the carrier is a
+	// cnc.Connection wrapped in a FakePacketConn, and cnc.Connection's
+	// SetReadDeadline is a no-op that reports success. quic-go is then told the
+	// reader will wake, and waits forever for a read that nothing interrupts.
+	// Closing the packet conn first is what interrupts it, so by the time
+	// Transport.Close looks, the loop has already finished.
+	//
+	// The graceful part of the teardown is unaffected: the request stream and
+	// CONNECTION_CLOSE above both go out while the conn is still open.
 	if t.pktConn != nil {
 		t.pktConn.Close()
+	}
+	if t.quicTr != nil {
+		t.quicTr.Close()
 	}
 	return nil
 }
