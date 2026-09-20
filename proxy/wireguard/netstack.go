@@ -129,8 +129,10 @@ func (tun *netTun) Events() <-chan tun.Event {
 }
 
 func (tun *netTun) Read(buf [][]byte, sizes []int, offset int) (int, error) {
-	view, ok := <-tun.incomingPacket
-	if !ok {
+	var view *buffer.View
+	select {
+	case view = <-tun.incomingPacket:
+	case <-tun.closed:
 		return 0, os.ErrClosed
 	}
 
@@ -201,9 +203,8 @@ func (tun *netTun) Close() error {
 			close(tun.events)
 		}
 
-		if tun.incomingPacket != nil {
-			close(tun.incomingPacket)
-		}
+		// we don't close incomingPacket, because WriteNotify may be mid-send on it
+		// (DNS lookup) and would panic; Read returns on tun.closed instead.
 	})
 	return nil
 }
