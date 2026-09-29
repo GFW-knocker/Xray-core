@@ -90,3 +90,91 @@ func TestFragmentWriterBounds(t *testing.T) {
 		})
 	}
 }
+
+type recordingWriter struct{ writes [][]byte }
+
+func (r *recordingWriter) Write(b []byte) (int, error) {
+	r.writes = append(r.writes, append([]byte(nil), b...))
+	return len(b), nil
+}
+
+func TestFragmentWriterEmptyRecord(t *testing.T) {
+	cases := []struct {
+		name               string
+		minor              uint32
+		lenMax, batchMin   uint64
+		batchMax           uint64
+		payload            int
+		wantFirstRecordsIn int
+	}{
+		{"minor01_batch3", 0x01, 20, 3, 3, 517, 4},
+		{"minor02_batch0", 0x02, 20, 0, 0, 517, 1},
+		{"minorff_len1", 0xff, 1, 10, 10, 300, 11},
+		{"oneWrite", 0x03, 20, 65535, 65535, 1507, -1},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sink := &recordingWriter{}
+			w := &FragmentWriter{
+				fragment: &Fragment{
+					PacketsFrom:      0,
+					PacketsTo:        1,
+					LengthMin:        1,
+					LengthMax:        tc.lenMax,
+					BatchMin:         tc.batchMin,
+					BatchMax:         tc.batchMax,
+					EmptyRecordMinor: tc.minor,
+				},
+				writer: sink,
+			}
+
+			in := tlsRecord(tc.payload)
+			if n, err := w.Write(in); err != nil || n != len(in) {
+				t.Fatalf("Write = %d, %v; want %d, nil", n, err, len(in))
+			}
+
+			first := sink.writes[0]
+			want := []byte{22, 3, byte(tc.minor), 0, 0}
+			if !bytes.Equal(first[:5], want) {
+				t.Fatalf("first write starts % x, want % x", first[:5], want)
+			}
+
+			var all []byte
+			for _, b := range sink.writes {
+				all = append(all, b...)
+			}
+			empties := 0
+			for i := 0; i < len(all); {
+				l := (int(all[i+3]) << 8) | int(all[i+4])
+				if l == 0 {
+					empties++
+				} else if all[i+1] != 3 || all[i+2] != 1 {
+					t.Fatalf("fragment at %d has version %02x%02x, want hello's 0301", i, all[i+1], all[i+2])
+				} else if l > int(tc.lenMax) {
+					t.Fatalf("fragment at %d is %d bytes, max %d", i, l, tc.lenMax)
+				}
+				i += 5 + l
+			}
+			if empties != 1 {
+				t.Fatalf("found %d empty records, want 1", empties)
+			}
+
+			if tc.wantFirstRecordsIn >= 0 {
+				recs := 0
+				for i := 5; i < len(first); i += 5 + ((int(first[i+3]) << 8) | int(first[i+4])) {
+					recs++
+				}
+				if recs != tc.wantFirstRecordsIn {
+					t.Fatalf("first write carries %d fragments, want %d", recs, tc.wantFirstRecordsIn)
+				}
+			} else if len(sink.writes) != 1 {
+				t.Fatalf("got %d writes, want everything in 1", len(sink.writes))
+			}
+
+			if got := reassemble(t, all); !bytes.Equal(got, in[5:]) {
+				t.Fatalf("payload mismatch: got %d bytes, want %d", len(got), len(in)-5)
+			}
+		})
+	}
+}

@@ -133,10 +133,11 @@ type Fragment struct {
 	Host2Domain string `protobuf:"bytes,13,opt,name=host2_domain,json=host2Domain,proto3" json:"host2_domain,omitempty"`
 	// Number of TLS records batched into a single write before sleeping for
 	// "interval". Defaults to 10-20 when absent from the JSON config.
-	BatchMin      uint64 `protobuf:"varint,14,opt,name=batch_min,json=batchMin,proto3" json:"batch_min,omitempty"`
-	BatchMax      uint64 `protobuf:"varint,15,opt,name=batch_max,json=batchMax,proto3" json:"batch_max,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	BatchMin         uint64 `protobuf:"varint,14,opt,name=batch_min,json=batchMin,proto3" json:"batch_min,omitempty"`
+	BatchMax         uint64 `protobuf:"varint,15,opt,name=batch_max,json=batchMax,proto3" json:"batch_max,omitempty"`
+	EmptyRecordMinor uint32 `protobuf:"varint,16,opt,name=empty_record_minor,json=emptyRecordMinor,proto3" json:"empty_record_minor,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *Fragment) Reset() {
@@ -270,6 +271,13 @@ func (x *Fragment) GetBatchMin() uint64 {
 func (x *Fragment) GetBatchMax() uint64 {
 	if x != nil {
 		return x.BatchMax
+	}
+	return 0
+}
+
+func (x *Fragment) GetEmptyRecordMinor() uint32 {
+	if x != nil {
+		return x.EmptyRecordMinor
 	}
 	return 0
 }
@@ -610,7 +618,7 @@ const file_proxy_freedom_config_proto_rawDesc = "" +
 	"\n" +
 	"\x1aproxy/freedom/config.proto\x12\x12xray.proxy.freedom\x1a!common/protocol/server_spec.proto\x1a\x1ftransport/internet/config.proto\x1a\x15common/net/port.proto\x1a\x18common/net/network.proto\x1a\x1bcommon/geodata/geodat.proto\"S\n" +
 	"\x13DestinationOverride\x12<\n" +
-	"\x06server\x18\x01 \x01(\v2$.xray.common.protocol.ServerEndpointR\x06server\"\xfb\x03\n" +
+	"\x06server\x18\x01 \x01(\v2$.xray.common.protocol.ServerEndpointR\x06server\"\xa9\x04\n" +
 	"\bFragment\x12!\n" +
 	"\fpackets_from\x18\x01 \x01(\x04R\vpacketsFrom\x12\x1d\n" +
 	"\n" +
@@ -630,7 +638,8 @@ const file_proxy_freedom_config_proto_rawDesc = "" +
 	"\fhost2_header\x18\f \x01(\tR\vhost2Header\x12!\n" +
 	"\fhost2_domain\x18\r \x01(\tR\vhost2Domain\x12\x1b\n" +
 	"\tbatch_min\x18\x0e \x01(\x04R\bbatchMin\x12\x1b\n" +
-	"\tbatch_max\x18\x0f \x01(\x04R\bbatchMax\"\xec\x01\n" +
+	"\tbatch_max\x18\x0f \x01(\x04R\bbatchMax\x12,\n" +
+	"\x12empty_record_minor\x18\x10 \x01(\rR\x10emptyRecordMinor\"\xec\x01\n" +
 	"\x05Noise\x12\x1d\n" +
 	"\n" +
 	"length_min\x18\x01 \x01(\x04R\tlengthMin\x12\x1d\n" +

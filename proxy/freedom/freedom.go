@@ -397,7 +397,8 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
 		if destination.Network == net.Network_TCP {
 			if h.config.Fragment != nil {
 				errors.LogDebug(ctx, "FRAGMENT", h.config.Fragment.PacketsFrom, h.config.Fragment.PacketsTo, h.config.Fragment.LengthMin, h.config.Fragment.LengthMax,
-					h.config.Fragment.IntervalMin, h.config.Fragment.IntervalMax, h.config.Fragment.MaxSplitMin, h.config.Fragment.MaxSplitMax)
+					h.config.Fragment.IntervalMin, h.config.Fragment.IntervalMax, h.config.Fragment.MaxSplitMin, h.config.Fragment.MaxSplitMax,
+					"emptyRecordMinor", h.config.Fragment.EmptyRecordMinor)
 				writer = buf.NewWriter(&FragmentWriter{
 					fragment: h.config.Fragment,
 					writer:   conn,
@@ -873,10 +874,15 @@ func (f *FragmentWriter) Write(b []byte) (int, error) {
 		// room for a whole extra maximum-size record on top of its bound, and
 		// both get a fixed pad beyond that.
 		buf := make([]byte, 5+maxPayload+fragmentBufferSlack)
-		queue := make([]byte, queueCap+5+maxPayload+fragmentBufferSlack)
+		queue := make([]byte, queueCap+5+maxPayload+fragmentBufferSlack+5)
 		n_queue := int(nQueue)
 		L_queue := 0
 		c_queue := 0
+
+		if minor := f.fragment.EmptyRecordMinor; minor != 0 {
+			copy(queue, []byte{22, 3, byte(minor), 0, 0})
+			L_queue = 5
+		}
 		for from := 0; ; {
 			to := from + int(randBetween(int64(f.fragment.LengthMin), int64(f.fragment.LengthMax)))
 			if to > len(data) {

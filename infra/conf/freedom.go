@@ -44,8 +44,60 @@ const (
 	maxFragmentPackets = 65535
 	// Milliseconds. An hour is far past any real use and keeps the
 	// time.Duration multiplication in proxy/freedom in range.
-	maxFragmentInterval = 3600000
+	maxFragmentInterval         = 3600000
+	minFragmentLength           = -254
+	defaultEmptyRecordLengthMax = 20
 )
+
+func parseFragmentLength(s string) (int64, int64, error) {
+	if s == "" {
+		return 0, 0, errors.New("Length can't be empty")
+	}
+	negative := strings.HasPrefix(s, "-")
+	parts := strings.Split(strings.TrimPrefix(s, "-"), "-")
+	if len(parts) > 2 {
+		return 0, 0, errors.New("Invalid Length: ", s)
+	}
+
+	a, err := strconv.ParseUint(parts[0], 10, 64)
+	if err != nil {
+		return 0, 0, errors.New("Invalid LengthMin").Base(err)
+	}
+	if negative && a > -minFragmentLength {
+		return 0, 0, errors.New("LengthMin can't be less than ", minFragmentLength)
+	}
+	if a > maxFragmentLength {
+		return 0, 0, errors.New("Length can't be greater than ", maxFragmentLength)
+	}
+	lengthMin := int64(a)
+	if negative {
+		lengthMin = -lengthMin
+	}
+
+	var lengthMax int64
+	if len(parts) == 2 {
+		b, err := strconv.ParseUint(parts[1], 10, 64)
+		if err != nil {
+			return 0, 0, errors.New("Invalid LengthMax").Base(err)
+		}
+		if b > maxFragmentLength {
+			return 0, 0, errors.New("LengthMax can't be greater than ", maxFragmentLength)
+		}
+		lengthMax = int64(b)
+	} else if lengthMin <= 0 {
+		lengthMax = defaultEmptyRecordLengthMax
+	} else {
+		lengthMax = lengthMin
+	}
+
+	if lengthMin > lengthMax {
+		lengthMin, lengthMax = lengthMax, lengthMin
+	}
+	if lengthMax <= 0 {
+		return 0, 0, errors.New("LengthMax must be greater than 0 when LengthMin is 0 or negative")
+	}
+	return lengthMin, lengthMax, nil
+}
 
 type Fragment struct {
 	Packets      string      `json:"packets"`
@@ -162,32 +214,18 @@ func (c *FreedomConfig) Build() (proto.Message, error) {
 		}
 
 		{
-			if c.Fragment.Length == "" {
-				return nil, errors.New("Length can't be empty")
-			}
-			lengthMinMax := strings.Split(c.Fragment.Length, "-")
-			if len(lengthMinMax) == 2 {
-				config.Fragment.LengthMin, err = strconv.ParseUint(lengthMinMax[0], 10, 64)
-				config.Fragment.LengthMax, err2 = strconv.ParseUint(lengthMinMax[1], 10, 64)
-			} else {
-				config.Fragment.LengthMin, err = strconv.ParseUint(lengthMinMax[0], 10, 64)
-				config.Fragment.LengthMax = config.Fragment.LengthMin
-			}
+			lengthMin, lengthMax, err := parseFragmentLength(c.Fragment.Length)
 			if err != nil {
-				return nil, errors.New("Invalid LengthMin").Base(err)
+				return nil, err
 			}
-			if err2 != nil {
-				return nil, errors.New("Invalid LengthMax").Base(err2)
+			if lengthMin <= 0 {
+				if config.Fragment.PacketsFrom == 0 && config.Fragment.PacketsTo == 1 {
+					config.Fragment.EmptyRecordMinor = uint32(1 - lengthMin)
+				}
+				lengthMin = 1
 			}
-			if config.Fragment.LengthMin > config.Fragment.LengthMax {
-				config.Fragment.LengthMin, config.Fragment.LengthMax = config.Fragment.LengthMax, config.Fragment.LengthMin
-			}
-			if config.Fragment.LengthMin == 0 {
-				return nil, errors.New("LengthMin can't be 0")
-			}
-			if config.Fragment.LengthMax > maxFragmentLength {
-				return nil, errors.New("LengthMax can't be greater than ", maxFragmentLength)
-			}
+			config.Fragment.LengthMin = uint64(lengthMin)
+			config.Fragment.LengthMax = uint64(lengthMax)
 		}
 
 		{

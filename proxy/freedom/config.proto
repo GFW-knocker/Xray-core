@@ -35,6 +35,7 @@ message Fragment {
   // "interval". Defaults to 10-20 when absent from the JSON config.
   uint64 batch_min = 14;
   uint64 batch_max = 15;
+  uint32 empty_record_minor = 16;
 }
 
 message Noise {
