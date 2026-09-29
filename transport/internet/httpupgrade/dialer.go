@@ -3,6 +3,8 @@ package httpupgrade
 import (
 	"bufio"
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"net/http"
 	"net/url"
 	"strings"
@@ -104,6 +106,16 @@ func dialhttpUpgrade(ctx context.Context, dest net.Destination, streamSettings *
 	uagent := req.Header.Get("User-Agent")
 	if uagent == "" {
 		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36")
+	}
+
+	// make a valid Sec-WebSocket-Key if not present
+	if len(req.Header.Values("Sec-WebSocket-Key")) == 0 {
+		var buf [16]byte
+		rand.Read(buf[:])
+		req.Header.Set("Sec-WebSocket-Key", base64.StdEncoding.EncodeToString(buf[:]))
+	}
+	if len(req.Header.Values("Sec-WebSocket-Version")) == 0 {
+		req.Header.Set("Sec-WebSocket-Version", "13")
 	}
 
 	err = req.Write(conn)
