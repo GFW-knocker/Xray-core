@@ -429,7 +429,24 @@ func (h *Handler) init(ctx context.Context) error {
 
 	// ------ GFW-knocker --------------------
 
-	bind := &bind{}
+	// device.NewDevice may use the bind right away (Up -> BindUpdate -> Open),
+	// so everything it reads must be set before creating the device.
+	bind := &bind{
+		resolveFunc: resolveFunc,
+		listenFunc:  listenFunc,
+		reserved:    h.conf.Reserved,
+		// ------ GFW-knocker --------------------
+		// read by the device (Get_extra_data) for its very first handshake
+		Wnoise:           h.conf.Wnoise,
+		Wheader:          Wheader,
+		WnoisecountFrom:  WnoisecountFrom,
+		WnoisecountTo:    WnoisecountTo,
+		WnoisedelayFrom:  WnoisedelayFrom,
+		WnoisedelayTo:    WnoisedelayTo,
+		WpayloadsizeFrom: WpayloadsizeFrom,
+		WpayloadsizeTo:   WpayloadsizeTo,
+		// ------ GFW-knocker --------------------
+	}
 	logger := &device.Logger{
 		Verbosef: func(format string, args ...any) {
 			log.Record(&log.GeneralMessage{
@@ -445,20 +462,7 @@ func (h *Handler) init(ctx context.Context) error {
 		},
 	}
 	dev := device.NewDevice(h.tun, bind, logger)
-	bind.resolveFunc = resolveFunc
-	bind.listenFunc = listenFunc
-	bind.downFunc = dev.Down
-	bind.reserved = h.conf.Reserved
-	// ------ GFW-knocker --------------------
-	bind.Wnoise = h.conf.Wnoise
-	bind.Wheader = Wheader
-	bind.WnoisecountFrom = WnoisecountFrom
-	bind.WnoisecountTo = WnoisecountTo
-	bind.WnoisedelayFrom = WnoisedelayFrom
-	bind.WnoisedelayTo = WnoisedelayTo
-	bind.WpayloadsizeFrom = WpayloadsizeFrom
-	bind.WpayloadsizeTo = WpayloadsizeTo
-	// ------ GFW-knocker --------------------
+	bind.setDownFunc(dev.Down)
 	var cfg strings.Builder
 	cfg.WriteString("private_key=" + h.conf.SecretKey + "\n")
 	for _, peer := range h.conf.Peers {
