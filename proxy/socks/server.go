@@ -30,6 +30,7 @@ type Server struct {
 	config        *ServerConfig
 	policyManager policy.Manager
 	cone          bool
+	udpFilter     *UDPFilter // MahsaNG: see udpfilter.go
 	httpServer    *http.Server
 }
 
@@ -46,6 +47,7 @@ func NewServer(ctx context.Context, config *ServerConfig) (*Server, error) {
 	}
 	if config.AuthType == AuthType_PASSWORD {
 		httpConfig.Accounts = config.Accounts
+		s.udpFilter = new(UDPFilter) // MahsaNG: only used when auth is enabled
 	}
 	s.httpServer, _ = http.NewServer(ctx, httpConfig)
 	return s, nil
@@ -58,8 +60,17 @@ func (s *Server) policy() policy.Session {
 }
 
 // Network implements proxy.Inbound.
+//
+// MahsaNG: with "udp": true the inbound also listens on UDP at its own port
+// again, next to the per-association port the RFC 1928 UDP ASSOCIATE hands
+// out. Android's tun2socks "--enable-udprelay" sends its SOCKS5-UDP datagrams
+// there without doing UDP ASSOCIATE. See udpfilter.go.
 func (s *Server) Network() []net.Network {
-	return []net.Network{net.Network_TCP}
+	list := []net.Network{net.Network_TCP}
+	if s.config.UdpEnabled {
+		list = append(list, net.Network_UDP)
+	}
+	return list
 }
 
 // Process implements proxy.Inbound.
@@ -89,6 +100,13 @@ func (s *Server) Process(ctx context.Context, network net.Network, conn stat.Con
 			return s.httpServer.ProcessWithFirstbyte(ctx, network, conn, dispatcher, firstbyte...)
 		}
 		return s.processTCP(ctx, conn, dispatcher, firstbyte)
+	case net.Network_UDP:
+		// MahsaNG: SOCKS5-UDP datagrams sent straight to the inbound port
+		if s.udpFilter != nil && !s.udpFilter.Check(conn.RemoteAddr()) {
+			errors.LogDebug(ctx, "Unauthorized UDP access from ", conn.RemoteAddr().String())
+			return nil
+		}
+		return s.handleUDPPayload(ctx, conn, dispatcher)
 	default:
 		return errors.New("unknown network: ", network)
 	}
@@ -168,6 +186,10 @@ func (s *Server) processTCP(ctx context.Context, conn stat.Connection, dispatche
 	if request.Command == protocol.RequestCommandUDP {
 		if tempUDPConn == nil {
 			return errors.New("UDP associate with listen port failed")
+		}
+		if s.udpFilter != nil {
+			// MahsaNG: authenticated, so this IP may also use the inbound's own UDP port
+			s.udpFilter.Add(conn.RemoteAddr())
 		}
 		tempUDPConn.SetTimeout(plcy.Timeouts.ConnectionIdle)
 		errCh := make(chan error, 1)
