@@ -6,6 +6,23 @@ option go_package = "github.com/GFW-knocker/Xray-core/transport/internet/finalma
 option java_package = "com.xray.transport.internet.finalmask.noise";
 option java_multiple_files = true;
 
+// Segment is one piece of a noise "type": "exp" pattern.
+message Segment {
+    enum Kind {
+        BYTES = 0;
+        RANDOM = 1;
+        RANDOM_ASCII = 2;
+        RANDOM_DIGIT = 3;
+        TIMESTAMP = 4;
+        COUNTER = 5;
+        NONCE = 6;
+    }
+    Kind kind = 1;
+    bytes bytes = 2;
+    int64 min_size = 3;
+    int64 max_size = 4;
+}
+
 message Item {
     int64 rand_min = 1;
     int64 rand_max = 2;
@@ -15,6 +32,8 @@ message Item {
     int64 delay_min = 6;
     int64 delay_max = 7;
     string gen = 8;
+    // upstream numbers this 8, which the fork already uses for gen
+    repeated Segment segments = 9;
 }
 
 message Config {

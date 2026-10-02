@@ -356,7 +356,12 @@ func (c *NoiseMask) Build() (proto.Message, error) {
 		// head of the datagram, so only one of them can be given. "rand" then
 		// appends that many random bytes after whichever was used, which is how
 		// the wnoise "quic"/"quicv1" shape (header plus wpayloadsize) is
-		// spelled here.
+		// spelled here. With "type": "exp" the head is instead built from the
+		// pattern in "packet" (upstream #6862), and "rand" may follow it too.
+		isExp := strings.ToLower(item.Type) == "exp"
+		if isExp && item.Gen != "" {
+			return nil, errors.New(`noise item: "gen" cannot be used with "type": "exp"`)
+		}
 		if item.Gen != "" {
 			if len(item.Packet) > 0 {
 				return nil, errors.New(`noise item: "gen" and "packet" are mutually exclusive`)
@@ -381,7 +386,18 @@ func (c *NoiseMask) Build() (proto.Message, error) {
 		}
 		// "type" describes how "packet" is encoded, so it has nothing to parse
 		// when the head comes from a generator.
-		if item.Gen == "" {
+		var segments []*noise.Segment
+		if isExp {
+			var exp string
+			if err := json.Unmarshal(item.Packet, &exp); err != nil {
+				return nil, errors.New(`"packet" of noise "type": "exp" must be a string`).Base(err)
+			}
+			var err error
+			if segments, err = parseNoiseExp(exp); err != nil {
+				return nil, err
+			}
+			item.Packet = nil
+		} else if item.Gen == "" {
 			var err error
 			if item.Packet, err = PraseByteSlice(item.Packet, item.Type); err != nil {
 				return nil, err
@@ -396,6 +412,7 @@ func (c *NoiseMask) Build() (proto.Message, error) {
 			DelayMin:     int64(item.Delay.From),
 			DelayMax:     int64(item.Delay.To),
 			Gen:          item.Gen,
+			Segments:     segments,
 		})
 	}
 
@@ -404,6 +421,90 @@ func (c *NoiseMask) Build() (proto.Message, error) {
 		ResetMax: int64(c.Reset.To),
 		Items:    noiseSlice,
 	}, nil
+}
+
+var noiseExpPattern = regexp.MustCompile(`<\s*([a-z]+)(?:\s+([^>]*?))?\s*>`)
+
+// parseNoiseExp turns a noise "exp" pattern such as "<b 0x1603><r 16-32><t>"
+// into segments (upstream #6862).
+func parseNoiseExp(exp string) ([]*noise.Segment, error) {
+	var segments []*noise.Segment
+	matches := noiseExpPattern.FindAllStringSubmatchIndex(exp, -1)
+	last := 0
+	for _, m := range matches {
+		if strings.TrimSpace(exp[last:m[0]]) != "" {
+			return nil, errors.New("invalid noise exp near ", exp[last:m[0]])
+		}
+		last = m[1]
+		key := exp[m[2]:m[3]]
+		arg := ""
+		if m[4] >= 0 {
+			arg = exp[m[4]:m[5]]
+		}
+		segment, err := buildNoiseSegment(key, arg)
+		if err != nil {
+			return nil, err
+		}
+		segments = append(segments, segment)
+	}
+	if strings.TrimSpace(exp[last:]) != "" {
+		return nil, errors.New("invalid noise exp near ", exp[last:])
+	}
+	if len(segments) == 0 {
+		return nil, errors.New("empty noise exp: ", exp)
+	}
+	return segments, nil
+}
+
+func buildNoiseSegment(key, arg string) (*noise.Segment, error) {
+	sizeSegment := func(kind noise.Segment_Kind) (*noise.Segment, error) {
+		if arg == "" {
+			return nil, errors.New("<", key, "> in noise exp needs a size")
+		}
+		lo, hi, err := ParseRangeString(arg)
+		if err != nil {
+			return nil, err
+		}
+		if lo < 0 || hi < lo || hi > 65535 {
+			return nil, errors.New("invalid size in noise exp: ", arg)
+		}
+		return &noise.Segment{Kind: kind, MinSize: int64(lo), MaxSize: int64(hi)}, nil
+	}
+	switch key {
+	case "b":
+		hexStr := strings.TrimPrefix(strings.TrimPrefix(strings.Join(strings.Fields(arg), ""), "0x"), "0X")
+		if len(hexStr) == 0 {
+			return nil, errors.New("empty bytes in noise exp")
+		}
+		raw, err := hex.DecodeString(hexStr)
+		if err != nil {
+			return nil, errors.New("invalid hex in noise exp: ", arg).Base(err)
+		}
+		return &noise.Segment{Kind: noise.Segment_BYTES, Bytes: raw}, nil
+	case "r":
+		return sizeSegment(noise.Segment_RANDOM)
+	case "rc":
+		return sizeSegment(noise.Segment_RANDOM_ASCII)
+	case "rd":
+		return sizeSegment(noise.Segment_RANDOM_DIGIT)
+	case "t":
+		if arg != "" {
+			return nil, errors.New("<t> in noise exp takes no argument")
+		}
+		return &noise.Segment{Kind: noise.Segment_TIMESTAMP}, nil
+	case "c":
+		if arg != "" {
+			return nil, errors.New("<c> in noise exp takes no argument")
+		}
+		return &noise.Segment{Kind: noise.Segment_COUNTER}, nil
+	case "n":
+		if arg != "" {
+			return nil, errors.New("<n> in noise exp takes no argument")
+		}
+		return &noise.Segment{Kind: noise.Segment_NONCE}, nil
+	default:
+		return nil, errors.New("unknown <", key, "> in noise exp")
+	}
 }
 
 type UDPItem struct {

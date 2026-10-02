@@ -62,7 +62,14 @@ func NewClient(ctx context.Context, conf *DeviceConfig) (*Handler, error) {
 	p := v.GetFeature(policy.ManagerType()).(policy.Manager)
 	d := v.GetFeature(dns.ClientType()).(dns.Client)
 
-	streamSettings := session.StreamSettingsFromContext(ctx).(*internet.MemoryStreamConfig)
+	// A handler built without streamSettings (e.g. from a protobuf config with no
+	// SenderSettings) has none in its context, and asserting blindly would panic
+	// and take the process down. An empty one stands in: only SocketSettings and
+	// UdpmaskManager are read from it, and both may be nil.
+	streamSettings, _ := session.StreamSettingsFromContext(ctx).(*internet.MemoryStreamConfig)
+	if streamSettings == nil {
+		streamSettings = &internet.MemoryStreamConfig{}
+	}
 	tag := session.FullHandlerFromContext(ctx).Tag()
 	var uplinkCounter stats.Counter
 	var downlinkCounter stats.Counter

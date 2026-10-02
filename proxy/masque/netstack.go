@@ -135,12 +135,16 @@ func CreateNetTUN(localAddresses, dnsServers []netip.Addr, mtu int, handleLocal 
 // what the MASQUE side puts on the wire. It returns os.ErrClosed once the
 // device is closed.
 func (tun *netTun) ReadPacket(p []byte) (int, error) {
-	view, ok := <-tun.incomingPacket
-	if !ok {
+	var view *buffer.View
+	select {
+	case view = <-tun.incomingPacket:
+	case <-tun.closed:
 		return 0, os.ErrClosed
 	}
 
-	return view.Read(p)
+	n, err := view.Read(p)
+	view.Release()
+	return n, err
 }
 
 // WritePacket hands one IP packet from the tunnel to the stack. This is the
@@ -197,9 +201,8 @@ func (tun *netTun) Close() error {
 		tun.ep.RemoveNotify(tun.notifyHandle)
 		tun.ep.Close()
 
-		if tun.incomingPacket != nil {
-			close(tun.incomingPacket)
-		}
+		// incomingPacket is not closed: WriteNotify may be mid-send on it and
+		// would panic; ReadPacket returns on tun.closed instead.
 	})
 	return nil
 }

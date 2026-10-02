@@ -2,6 +2,7 @@ package noise
 
 import (
 	"encoding/hex"
+	"sync/atomic"
 	"testing"
 )
 
@@ -136,14 +137,14 @@ func TestItemDatagram(t *testing.T) {
 	literal := []byte{0xd0, 0x6b, 0x33, 0x43, 0xcf}
 
 	t.Run("rand only", func(t *testing.T) {
-		buf, ok := (&Item{RandMin: 18, RandMax: 18, RandRangeMax: 255}).datagram()
+		buf, ok := (&Item{RandMin: 18, RandMax: 18, RandRangeMax: 255}).datagram(new(atomic.Uint32))
 		if !ok || len(buf) != 18 {
 			t.Fatalf("len = %d, ok = %v, want 18, true", len(buf), ok)
 		}
 	})
 
 	t.Run("packet only", func(t *testing.T) {
-		buf, ok := (&Item{Packet: literal}).datagram()
+		buf, ok := (&Item{Packet: literal}).datagram(new(atomic.Uint32))
 		if !ok || hex.EncodeToString(buf) != "d06b3343cf" {
 			t.Fatalf("buf = %x, ok = %v, want the literal verbatim", buf, ok)
 		}
@@ -152,14 +153,14 @@ func TestItemDatagram(t *testing.T) {
 	t.Run("empty item still sends", func(t *testing.T) {
 		// Pre-generator behaviour: an item with neither shape wrote a
 		// zero-length datagram rather than being skipped.
-		buf, ok := (&Item{}).datagram()
+		buf, ok := (&Item{}).datagram(new(atomic.Uint32))
 		if !ok || len(buf) != 0 {
 			t.Fatalf("len = %d, ok = %v, want 0, true", len(buf), ok)
 		}
 	})
 
 	t.Run("packet plus rand", func(t *testing.T) {
-		buf, ok := (&Item{Packet: literal, RandMin: 5, RandMax: 5, RandRangeMax: 255}).datagram()
+		buf, ok := (&Item{Packet: literal, RandMin: 5, RandMax: 5, RandRangeMax: 255}).datagram(new(atomic.Uint32))
 		if !ok || len(buf) != 10 {
 			t.Fatalf("len = %d, ok = %v, want 10, true", len(buf), ok)
 		}
@@ -169,7 +170,7 @@ func TestItemDatagram(t *testing.T) {
 	})
 
 	t.Run("gen only", func(t *testing.T) {
-		buf, ok := (&Item{Gen: GenQUICInit}).datagram()
+		buf, ok := (&Item{Gen: GenQUICInit}).datagram(new(atomic.Uint32))
 		if !ok || len(buf) != quicInitSize {
 			t.Fatalf("len = %d, ok = %v, want %d, true", len(buf), ok, quicInitSize)
 		}
@@ -177,7 +178,7 @@ func TestItemDatagram(t *testing.T) {
 
 	t.Run("gen plus rand", func(t *testing.T) {
 		// This is the wnoise "quic" shape: 18-byte header + wpayloadsize.
-		buf, ok := (&Item{Gen: GenQUIC, RandMin: 5, RandMax: 5, RandRangeMax: 255}).datagram()
+		buf, ok := (&Item{Gen: GenQUIC, RandMin: 5, RandMax: 5, RandRangeMax: 255}).datagram(new(atomic.Uint32))
 		if !ok || len(buf) != 23 {
 			t.Fatalf("len = %d, ok = %v, want 23, true", len(buf), ok)
 		}
@@ -189,7 +190,7 @@ func TestItemDatagram(t *testing.T) {
 	t.Run("unknown gen is skipped", func(t *testing.T) {
 		// The config builder rejects this, so it should be unreachable; if it
 		// ever is reached, send nothing rather than a bare payload.
-		if _, ok := (&Item{Gen: "nope", RandMin: 5, RandMax: 5}).datagram(); ok {
+		if _, ok := (&Item{Gen: "nope", RandMin: 5, RandMax: 5}).datagram(new(atomic.Uint32)); ok {
 			t.Error("ok = true, want false")
 		}
 	})
