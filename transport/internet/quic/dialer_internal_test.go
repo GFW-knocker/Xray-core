@@ -23,9 +23,8 @@ import (
 func serverSettings() *internet.MemoryStreamConfig {
 	ct, _ := cert.MustGenerate(nil, cert.DNSNames("www.example.com"), cert.CommonName("www.example.com"))
 	c := tls.ParseCertificate(ct)
-	// no hot-reload goroutine: it races the first handshakes in package tls
-	// (shared by every TLS server, not this transport), which -race would
-	// report here instead of anything in this package
+	// generated in memory: nothing to hot-reload, so no reload goroutine
+	// to account for in the goroutine-leak checks
 	c.OneTimeLoading = true
 	return &internet.MemoryStreamConfig{
 		ProtocolName:     "quic",

@@ -93,8 +93,8 @@ func Listen(ctx context.Context, address net.Address, port net.Port, streamSetti
 	if tlsConfig == nil {
 		ct, _ := cert.MustGenerate(nil, cert.DNSNames(internalDomain), cert.CommonName(internalDomain))
 		internalCert := tls.ParseCertificate(ct)
-		// generated in memory, so there is nothing to hot-reload; the reload
-		// goroutine would only rewrite it every hour under running handshakes
+		// generated in memory, so there is nothing to hot-reload and no need
+		// for a reload goroutine
 		internalCert.OneTimeLoading = true
 		tlsConfig = &tls.Config{
 			Certificate: []*tls.Certificate{internalCert},

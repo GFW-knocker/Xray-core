@@ -8,10 +8,13 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"os"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
+	"weak"
 
 	"github.com/GFW-knocker/Xray-core/common/errors"
 	"github.com/GFW-knocker/Xray-core/common/net"
@@ -38,96 +41,203 @@ func ParseCertificate(c *cert.Certificate) *Certificate {
 func (c *Config) loadSelfCertPool() (*x509.CertPool, error) {
 	root := x509.NewCertPool()
 	for _, cert := range c.Certificate {
-		if !root.AppendCertsFromPEM(cert.Certificate) {
+		if certPEM, _ := currentPEM(cert); !root.AppendCertsFromPEM(certPEM) {
 			return nil, errors.New("failed to append cert").AtWarning()
 		}
 	}
 	return root, nil
 }
 
-// BuildCertificates builds a list of TLS certificates from proto definition.
-func (c *Config) BuildCertificates() []*tls.Certificate {
-	certs := make([]*tls.Certificate, 0, len(c.Certificate))
+// certState is the live material of one Certificate entry, shared by every
+// GetTLSConfig call that uses the entry.
+//
+// GetTLSConfig runs on every dial, so anything it started per call -- a
+// reload goroutine, a parse of the key pair -- used to pile up with each
+// connection. The state is created once per entry instead, and its reload
+// goroutine ends when the entry (that is, its config) is garbage collected.
+type certState struct {
+	once sync.Once
+	stop chan struct{}
+
+	// pem is the entry's certificate and key as last loaded: the config's own,
+	// then whatever the reload goroutine reads from the files.
+	pem atomic.Pointer[certPEM]
+	// pair is the key pair handshakes are served (ENCIPHERMENT entries only).
+	// A reload or a new OCSP staple stores a new *tls.Certificate; one already
+	// published is never modified, as handshakes may be reading it.
+	pair atomic.Pointer[tls.Certificate]
+}
+
+type certPEM struct {
+	cert, key []byte
+}
+
+// certStates maps weak.Pointer[Certificate] to *certState. The key is weak so
+// the map does not keep configs alive; a cleanup on the entry removes it.
+var certStates sync.Map
+
+// stateOf returns entry's shared state, loading it and starting its reload
+// goroutine on first use.
+func stateOf(entry *Certificate) *certState {
+	wp := weak.Make(entry)
+	v, ok := certStates.Load(wp)
+	if !ok {
+		var loaded bool
+		v, loaded = certStates.LoadOrStore(wp, &certState{stop: make(chan struct{})})
+		if !loaded {
+			runtime.AddCleanup(entry, func(s *certState) {
+				certStates.Delete(wp)
+				close(s.stop)
+			}, v.(*certState))
+		}
+	}
+	s := v.(*certState)
+	s.once.Do(func() { s.load(entry) })
+	return s
+}
+
+// currentPEM returns entry's certificate and key as last loaded, so readers
+// see a hot-reloaded file without the entry itself being rewritten.
+func currentPEM(entry *Certificate) (cert, key []byte) {
+	if v, ok := certStates.Load(weak.Make(entry)); ok {
+		if p := v.(*certState).pem.Load(); p != nil {
+			return p.cert, p.key
+		}
+	}
+	return entry.Certificate, entry.Key
+}
+
+func parseKeyPair(certPEMBlock, keyPEMBlock []byte) *tls.Certificate {
+	keyPair, err := tls.X509KeyPair(certPEMBlock, keyPEMBlock)
+	if err != nil {
+		errors.LogWarningInner(context.Background(), err, "ignoring invalid X509 key pair")
+		return nil
+	}
+	keyPair.Leaf, err = x509.ParseCertificate(keyPair.Certificate[0])
+	if err != nil {
+		errors.LogWarningInner(context.Background(), err, "ignoring invalid certificate")
+		return nil
+	}
+	return &keyPair
+}
+
+func (s *certState) load(entry *Certificate) {
+	s.pem.Store(&certPEM{cert: entry.Certificate, key: entry.Key})
+
+	switch entry.Usage {
+	case Certificate_ENCIPHERMENT:
+		pair := parseKeyPair(entry.Certificate, entry.Key)
+		if pair == nil {
+			// skipped, and never reloaded
+			return
+		}
+		s.pair.Store(pair)
+	case Certificate_AUTHORITY_ISSUE:
+		// reloaded too: certificates are issued from the current CA
+	default:
+		return
+	}
+	if entry.OneTimeLoading {
+		return
+	}
+
+	hotReloadCertInterval := uint64(3600)
+	isOcspstapling := false
+	if entry.OcspStapling != 0 {
+		hotReloadCertInterval = entry.OcspStapling
+		isOcspstapling = true
+	}
+	// copied out so the goroutine holds no reference to the entry
+	certPath, keyPath, usage := entry.CertificatePath, entry.KeyPath, entry.Usage
+	go s.hotReload(certPath, keyPath, usage, time.Duration(hotReloadCertInterval)*time.Second, isOcspstapling)
+}
+
+// hotReload re-reads the entry's files every interval and, for ENCIPHERMENT,
+// refreshes the served key pair and its OCSP staple. It returns when the entry
+// is garbage collected, or when a file can no longer be read.
+func (s *certState) hotReload(certPath, keyPath string, usage Certificate_Usage, interval time.Duration, isOcspstapling bool) {
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		// the newly loaded key pair, nil when the files did not change
+		var newPair *tls.Certificate
+		if certPath != "" && keyPath != "" {
+			newCert, err := filesystem.ReadCert(certPath)
+			if err != nil {
+				errors.LogErrorInner(context.Background(), err, "failed to parse certificate")
+				return
+			}
+			newKey, err := filesystem.ReadCert(keyPath)
+			if err != nil {
+				errors.LogErrorInner(context.Background(), err, "failed to parse key")
+				return
+			}
+			if cur := s.pem.Load(); string(newCert) != string(cur.cert) || string(newKey) != string(cur.key) {
+				// Only a matching pair is taken: a renewal writes the two files
+				// one after the other, and a read in between must not replace a
+				// working pair with half of a new one. Until both match, the
+				// current pair stays and the files are read again next time.
+				if newPair = parseKeyPair(newCert, newKey); newPair != nil {
+					s.pem.Store(&certPEM{cert: newCert, key: newKey})
+				}
+			}
+		}
+		if usage == Certificate_ENCIPHERMENT {
+			s.refreshPair(newPair, isOcspstapling)
+		}
+		select {
+		case <-t.C:
+		case <-s.stop:
+			return
+		}
+	}
+}
+
+// refreshPair publishes newPair, if any, and the current OCSP staple.
+func (s *certState) refreshPair(newPair *tls.Certificate, isOcspstapling bool) {
+	cur := s.pair.Load()
+	next := cur
+	if newPair != nil {
+		next = newPair
+	}
+	if isOcspstapling {
+		if newOCSPData, err := ocsp.GetOCSPForCert(next.Certificate); err != nil {
+			errors.LogWarningInner(context.Background(), err, "ignoring invalid OCSP")
+		} else if string(newOCSPData) != string(next.OCSPStaple) {
+			staple := *next
+			staple.OCSPStaple = newOCSPData
+			next = &staple
+		}
+	}
+	if next != cur {
+		s.pair.Store(next)
+	}
+}
+
+// certificateStates returns the shared states of c's usable ENCIPHERMENT
+// certificates.
+func (c *Config) certificateStates() []*certState {
+	states := make([]*certState, 0, len(c.Certificate))
 	for _, entry := range c.Certificate {
 		if entry.Usage != Certificate_ENCIPHERMENT {
 			continue
 		}
-		getX509KeyPair := func() *tls.Certificate {
-			keyPair, err := tls.X509KeyPair(entry.Certificate, entry.Key)
-			if err != nil {
-				errors.LogWarningInner(context.Background(), err, "ignoring invalid X509 key pair")
-				return nil
-			}
-			keyPair.Leaf, err = x509.ParseCertificate(keyPair.Certificate[0])
-			if err != nil {
-				errors.LogWarningInner(context.Background(), err, "ignoring invalid certificate")
-				return nil
-			}
-			return &keyPair
+		if s := stateOf(entry); s.pair.Load() != nil {
+			states = append(states, s)
 		}
-		if keyPair := getX509KeyPair(); keyPair != nil {
-			certs = append(certs, keyPair)
-		} else {
-			continue
-		}
-		index := len(certs) - 1
-		setupOcspTicker(entry, func(isReloaded, isOcspstapling bool) {
-			cert := certs[index]
-			if isReloaded {
-				if newKeyPair := getX509KeyPair(); newKeyPair != nil {
-					cert = newKeyPair
-				} else {
-					return
-				}
-			}
-			if isOcspstapling {
-				if newOCSPData, err := ocsp.GetOCSPForCert(cert.Certificate); err != nil {
-					errors.LogWarningInner(context.Background(), err, "ignoring invalid OCSP")
-				} else if string(newOCSPData) != string(cert.OCSPStaple) {
-					cert.OCSPStaple = newOCSPData
-				}
-			}
-			certs[index] = cert
-		})
 	}
-	return certs
+	return states
 }
 
-func setupOcspTicker(entry *Certificate, callback func(isReloaded, isOcspstapling bool)) {
-	go func() {
-		if entry.OneTimeLoading {
-			return
-		}
-		var isOcspstapling bool
-		hotReloadCertInterval := uint64(3600)
-		if entry.OcspStapling != 0 {
-			hotReloadCertInterval = entry.OcspStapling
-			isOcspstapling = true
-		}
-		t := time.NewTicker(time.Duration(hotReloadCertInterval) * time.Second)
-		for {
-			var isReloaded bool
-			if entry.CertificatePath != "" && entry.KeyPath != "" {
-				newCert, err := filesystem.ReadCert(entry.CertificatePath)
-				if err != nil {
-					errors.LogErrorInner(context.Background(), err, "failed to parse certificate")
-					return
-				}
-				newKey, err := filesystem.ReadCert(entry.KeyPath)
-				if err != nil {
-					errors.LogErrorInner(context.Background(), err, "failed to parse key")
-					return
-				}
-				if string(newCert) != string(entry.Certificate) || string(newKey) != string(entry.Key) {
-					entry.Certificate = newCert
-					entry.Key = newKey
-					isReloaded = true
-				}
-			}
-			callback(isReloaded, isOcspstapling)
-			<-t.C
-		}
-	}()
+// BuildCertificates builds a list of TLS certificates from proto definition.
+// The list is a snapshot; handshakes go through the live states instead.
+func (c *Config) BuildCertificates() []*tls.Certificate {
+	states := c.certificateStates()
+	certs := make([]*tls.Certificate, 0, len(states))
+	for _, s := range states {
+		certs = append(certs, s.pair.Load())
+	}
+	return certs
 }
 
 func isCertificateExpired(c *tls.Certificate) bool {
@@ -142,7 +252,8 @@ func isCertificateExpired(c *tls.Certificate) bool {
 }
 
 func issueCertificate(rawCA *Certificate, domain string) (*tls.Certificate, error) {
-	parent, err := cert.ParseCertificate(rawCA.Certificate, rawCA.Key)
+	caCert, caKey := currentPEM(rawCA)
+	parent, err := cert.ParseCertificate(caCert, caKey)
 	if err != nil {
 		return nil, errors.New("failed to parse raw certificate").Base(err)
 	}
@@ -152,7 +263,7 @@ func issueCertificate(rawCA *Certificate, domain string) (*tls.Certificate, erro
 	}
 	newCertPEM, newKeyPEM := newCert.ToPEM()
 	if rawCA.BuildChain {
-		newCertPEM = bytes.Join([][]byte{newCertPEM, rawCA.Certificate}, []byte("\n"))
+		newCertPEM = bytes.Join([][]byte{newCertPEM, caCert}, []byte("\n"))
 	}
 	cert, err := tls.X509KeyPair(newCertPEM, newKeyPEM)
 	return &cert, err
@@ -163,7 +274,8 @@ func (c *Config) getCustomCA() []*Certificate {
 	for _, certificate := range c.Certificate {
 		if certificate.Usage == Certificate_AUTHORITY_ISSUE {
 			certs = append(certs, certificate)
-			setupOcspTicker(certificate, func(isReloaded, isOcspstapling bool) {})
+			// starts its hot reload once, not once per call
+			stateOf(certificate)
 		}
 	}
 	return certs
@@ -243,20 +355,21 @@ func getGetCertificateFunc(c *tls.Config, ca []*Certificate) func(hello *tls.Cli
 	}
 }
 
-func getNewGetCertificateFunc(certs []*tls.Certificate, rejectUnknownSNI bool) func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+func getNewGetCertificateFunc(states []*certState, rejectUnknownSNI bool) func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	return func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
-		if len(certs) == 0 {
+		if len(states) == 0 {
 			return nil, errNoCertificates
 		}
 		sni := strings.ToLower(hello.ServerName)
-		if !rejectUnknownSNI && (len(certs) == 1 || sni == "") {
-			return certs[0], nil
+		if !rejectUnknownSNI && (len(states) == 1 || sni == "") {
+			return states[0].pair.Load(), nil
 		}
 		gsni := "*"
 		if index := strings.IndexByte(sni, '.'); index != -1 {
 			gsni += sni[index:]
 		}
-		for _, keyPair := range certs {
+		for _, s := range states {
+			keyPair := s.pair.Load()
 			if keyPair.Leaf.Subject.CommonName == sni || keyPair.Leaf.Subject.CommonName == gsni {
 				return keyPair, nil
 			}
@@ -269,7 +382,7 @@ func getNewGetCertificateFunc(certs []*tls.Certificate, rejectUnknownSNI bool) f
 		if rejectUnknownSNI {
 			return nil, errNoCertificates
 		}
-		return certs[0], nil
+		return states[0].pair.Load(), nil
 	}
 }
 
@@ -417,7 +530,7 @@ func (c *Config) GetTLSConfig(opts ...Option) *tls.Config {
 	if len(caCerts) > 0 {
 		config.GetCertificate = getGetCertificateFunc(config, caCerts)
 	} else {
-		config.GetCertificate = getNewGetCertificateFunc(c.BuildCertificates(), c.RejectUnknownSni)
+		config.GetCertificate = getNewGetCertificateFunc(c.certificateStates(), c.RejectUnknownSni)
 	}
 
 	if sn := c.parseServerName(); len(sn) > 0 {
