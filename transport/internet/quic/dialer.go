@@ -19,6 +19,9 @@ import (
 
 type connectionContext struct {
 	rawConn *sysConn
+	// tr owns the goroutines reading and writing rawConn; it is closed together
+	// with rawConn so a dead connection leaves nothing running behind it.
+	tr *quic.Transport
 	// GFW-knocker: quic.Conn is a struct containing a sync.Mutex and atomics, so it
 	// must be held by pointer -- copying it would duplicate the lock.
 	conn *quic.Conn
@@ -45,13 +48,44 @@ func (c *connectionContext) openStream(destAddr net.Addr) (*interConn, error) {
 	return conn, nil
 }
 
+// close tears the connection down. The socket goes before the transport:
+// Transport.Close waits for its read loop, and a closed socket is what makes
+// that loop return at once.
+func (c *connectionContext) close() {
+	if err := c.conn.CloseWithError(0, ""); err != nil {
+		errors.LogInfoInner(context.Background(), err, "failed to close connection")
+	}
+	if err := c.rawConn.Close(); err != nil {
+		errors.LogInfoInner(context.Background(), err, "failed to close raw connection")
+	}
+	if err := c.tr.Close(); err != nil {
+		errors.LogInfoInner(context.Background(), err, "failed to close quic transport")
+	}
+}
+
+// destConnections is the state kept for one destination.
+type destConnections struct {
+	// dialing is a one-slot semaphore held across a handshake to this
+	// destination, so concurrent requests share one new connection instead of
+	// each dialing their own. Unlike a mutex, a waiter can give up on its ctx.
+	dialing chan struct{}
+	// conns is guarded by clientConnections.access.
+	conns []*connectionContext
+	// quicVersion remembers which quicdial attempt last connected, so the
+	// v2->v1 fallback is not re-paid on every dial.
+	quicVersion atomic.Int32
+}
+
+// clientConnections tracks the QUIC connections of every quic outbound in the
+// process.
+//
+// Lock order: a destination's dialing slot, then access. access is only held
+// for map and slice work, never across network I/O, so a slow or dead server
+// holds up nothing but other dials to that same server.
 type clientConnections struct {
-	access sync.Mutex
-	conns  map[net.Destination][]*connectionContext
-	// quicVersions remembers, per destination, which quicdial attempt last
-	// connected, so the v2->v1 fallback is not re-paid on every dial.
-	quicVersions map[net.Destination]*atomic.Int32
-	cleanup      *task.Periodic
+	access  sync.Mutex
+	dests   map[net.Destination]*destConnections
+	cleanup *task.Periodic
 }
 
 func isActive(s *quic.Conn) bool {
@@ -63,90 +97,123 @@ func isActive(s *quic.Conn) bool {
 	}
 }
 
-func removeInactiveConnections(conns []*connectionContext) []*connectionContext {
-	activeConnections := make([]*connectionContext, 0, len(conns))
-	for i, s := range conns {
-		if isActive(s.conn) {
-			activeConnections = append(activeConnections, s)
-			continue
-		}
-
-		errors.LogInfo(context.Background(), "closing quic connection at index: ", i)
-		if err := s.conn.CloseWithError(0, ""); err != nil {
-			errors.LogInfoInner(context.Background(), err, "failed to close connection")
-		}
-		if err := s.rawConn.Close(); err != nil {
-			errors.LogInfoInner(context.Background(), err, "failed to close raw connection")
+// splitInactive keeps the active connections and appends the rest to dead.
+func splitInactive(conns []*connectionContext, dead []*connectionContext) ([]*connectionContext, []*connectionContext) {
+	active := make([]*connectionContext, 0, len(conns))
+	for _, c := range conns {
+		if isActive(c.conn) {
+			active = append(active, c)
+		} else {
+			dead = append(dead, c)
 		}
 	}
+	return active, dead
+}
 
-	if len(activeConnections) < len(conns) {
-		errors.LogInfo(context.Background(), "active quic connection reduced from ", len(conns), " to ", len(activeConnections))
-		return activeConnections
+func closeConnections(conns []*connectionContext) {
+	if len(conns) > 0 {
+		errors.LogInfo(context.Background(), "closing ", len(conns), " inactive quic connection(s)")
 	}
-
-	return conns
+	for _, c := range conns {
+		c.close()
+	}
 }
 
 func (s *clientConnections) cleanConnections() error {
+	var dead []*connectionContext
+
+	s.access.Lock()
+	for _, d := range s.dests {
+		d.conns, dead = splitInactive(d.conns, dead)
+		if len(d.conns) == 0 {
+			// drop the backing array; the entry itself stays for quicVersion
+			d.conns = nil
+		}
+	}
+	s.access.Unlock()
+
+	// CloseWithError can wait on the connection's run loop: never under access
+	closeConnections(dead)
+	return nil
+}
+
+// destination returns the state for dest, creating it if needed.
+func (s *clientConnections) destination(dest net.Destination) *destConnections {
 	s.access.Lock()
 	defer s.access.Unlock()
 
-	if len(s.conns) == 0 {
-		return nil
+	if s.dests == nil {
+		s.dests = make(map[net.Destination]*destConnections)
 	}
+	d := s.dests[dest]
+	if d == nil {
+		d = &destConnections{dialing: make(chan struct{}, 1)}
+		s.dests[dest] = d
+	}
+	return d
+}
 
-	newConnMap := make(map[net.Destination][]*connectionContext)
+// openStreamOnExisting opens a stream on an active connection to d, newest
+// first, and returns nil if none can take one.
+func (s *clientConnections) openStreamOnExisting(ctx context.Context, d *destConnections, destAddr net.Addr) *interConn {
+	s.access.Lock()
+	conns := append([]*connectionContext(nil), d.conns...)
+	s.access.Unlock()
 
-	for dest, conns := range s.conns {
-		conns = removeInactiveConnections(conns)
-		if len(conns) > 0 {
-			newConnMap[dest] = conns
+	for i := len(conns) - 1; i >= 0; i-- {
+		conn, err := conns[i].openStream(destAddr)
+		if err == nil {
+			return conn
+		}
+		if err != errConnectionClosed {
+			// typically the server's stream limit; another connection may have room
+			errors.LogInfoInner(ctx, err, "failed to openStream: ")
 		}
 	}
-
-	s.conns = newConnMap
 	return nil
 }
 
 func (s *clientConnections) openConnection(ctx context.Context, destAddr net.Addr, config *Config, tlsConfig *tls.Config, sockopt *internet.SocketConfig) (stat.Connection, error) {
-	s.access.Lock()
-	defer s.access.Unlock()
-
-	if s.conns == nil {
-		s.conns = make(map[net.Destination][]*connectionContext)
-	}
-	if s.quicVersions == nil {
-		s.quicVersions = make(map[net.Destination]*atomic.Int32)
-	}
-
 	dest := net.DestinationFromAddr(destAddr)
-	quicVersion := s.quicVersions[dest]
-	if quicVersion == nil {
-		quicVersion = new(atomic.Int32)
-		s.quicVersions[dest] = quicVersion
+	d := s.destination(dest)
+
+	if conn := s.openStreamOnExisting(ctx, d, destAddr); conn != nil {
+		return conn, nil
 	}
 
-	var conns []*connectionContext
-	if s, found := s.conns[dest]; found {
-		conns = s
+	select {
+	case d.dialing <- struct{}{}:
+	case <-ctx.Done():
+		return nil, errors.New("gave up waiting for a quic connection to ", dest).Base(ctx.Err())
+	}
+	defer func() { <-d.dialing }()
+
+	// whoever held the slot before us may have just connected
+	if conn := s.openStreamOnExisting(ctx, d, destAddr); conn != nil {
+		return conn, nil
 	}
 
-	if len(conns) > 0 {
-		s := conns[len(conns)-1]
-		if isActive(s.conn) {
-			conn, err := s.openStream(destAddr)
-			if err == nil {
-				return conn, nil
-			}
-			errors.LogInfoInner(ctx, err, "failed to openStream: ")
-		} else {
-			errors.LogInfo(ctx, "current quic connection is not active!")
-		}
-	}
+	var dead []*connectionContext
+	s.access.Lock()
+	d.conns, dead = splitInactive(d.conns, dead)
+	s.access.Unlock()
+	closeConnections(dead)
 
-	conns = removeInactiveConnections(conns)
 	errors.LogInfo(ctx, "dialing quic to ", dest)
+	cc, err := dialConnection(ctx, dest, destAddr, config, tlsConfig, sockopt, &d.quicVersion)
+	if err != nil {
+		return nil, err
+	}
+
+	s.access.Lock()
+	d.conns = append(d.conns, cc)
+	s.access.Unlock()
+
+	return cc.openStream(destAddr)
+}
+
+// dialConnection opens a new QUIC connection to dest on its own socket.
+func dialConnection(ctx context.Context, dest net.Destination, destAddr net.Addr, config *Config, tlsConfig *tls.Config, sockopt *internet.SocketConfig, quicVersion *atomic.Int32) (*connectionContext, error) {
 	rawConn, err := internet.DialSystem(ctx, dest, sockopt)
 	if err != nil {
 		return nil, errors.New("failed to dial to dest: ", err).AtWarning().Base(err)
@@ -165,9 +232,9 @@ func (s *clientConnections) openConnection(ctx context.Context, destAddr net.Add
 	case *net.UDPConn:
 		udpConn = conn
 	case *internet.PacketConnWrapper:
-		udpConn = conn.PacketConn.(*net.UDPConn)
-		// udpConn = conn.Conn.(*net.UDPConn)
-	default:
+		udpConn, _ = conn.PacketConn.(*net.UDPConn)
+	}
+	if udpConn == nil {
 		// TODO: Support sockopt for QUIC
 		rawConn.Close()
 		return nil, errors.New("QUIC with sockopt is unsupported").AtWarning()
@@ -178,31 +245,39 @@ func (s *clientConnections) openConnection(ctx context.Context, destAddr net.Add
 		rawConn.Close()
 		return nil, err
 	}
-	tr := quic.Transport{
+	tr := &quic.Transport{
 		ConnectionIDLength: 12,
 		Conn:               sysConn,
 	}
+
+	// The handshake follows ctx's cancellation, so a request that gives up stops
+	// it, but not ctx's values: quic-go keeps the dial context (minus its
+	// cancellation) as the connection's own for as long as it lives.
+	dialCtx, cancel := context.WithCancel(context.Background())
+	stop := context.AfterFunc(ctx, cancel)
 	conn, err := quicdial.Dial(ctx, quicConfig, quicdial.Plain, quicVersion,
 		func(cfg *quic.Config) (*quic.Conn, error) {
-			return tr.Dial(context.Background(), destAddr, tlsConfig.GetTLSConfig(tls.WithDestination(dest)), cfg)
+			return tr.Dial(dialCtx, destAddr, tlsConfig.GetTLSConfig(tls.WithDestination(dest)), cfg)
 		})
+	stop()
+	cancel()
 	if err != nil {
 		sysConn.Close()
+		tr.Close()
 		return nil, err
 	}
 
-	context := &connectionContext{
+	return &connectionContext{
 		conn:    conn,
 		rawConn: sysConn,
-	}
-	s.conns[dest] = append(conns, context)
-	return context.openStream(destAddr)
+		tr:      tr,
+	}, nil
 }
 
 var client clientConnections
 
 func init() {
-	client.conns = make(map[net.Destination][]*connectionContext)
+	client.dests = make(map[net.Destination]*destConnections)
 	client.cleanup = &task.Periodic{
 		Interval: time.Minute,
 		Execute:  client.cleanConnections,

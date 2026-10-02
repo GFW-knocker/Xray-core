@@ -36,7 +36,10 @@ func wrapSysConn(rawConn *net.UDPConn, config *Config) (*sysConn, error) {
 	}, nil
 }
 
-var errInvalidPacket = errors.New("invalid packet")
+var (
+	errInvalidPacket  = errors.New("invalid packet")
+	errPacketTooLarge = errors.New("packet too large")
+)
 
 func (c *sysConn) readFromInternal(p []byte) (int, net.Addr, error) {
 	buffer := getBuffer()
@@ -66,6 +69,14 @@ func (c *sysConn) readFromInternal(p []byte) (int, net.Addr, error) {
 
 	nonce := payload[:c.auth.NonceSize()]
 	payload = payload[c.auth.NonceSize():]
+
+	// Open appends into p's array only while the plaintext fits; past that it
+	// returns a fresh slice, and quic-go would then slice its own buffer to a
+	// length it does not have and panic. Anyone holding the key could send such
+	// a packet, so drop it here.
+	if len(payload)-c.auth.Overhead() > len(p) {
+		return 0, nil, errInvalidPacket
+	}
 
 	p, err = c.auth.Open(p[:0], nonce, payload, nil)
 	if err != nil {
@@ -101,6 +112,18 @@ func (c *sysConn) WriteTo(p []byte, addr net.Addr) (int, error) {
 
 	payload := buffer
 	n := 0
+	overhead := 0
+	if c.header != nil {
+		overhead += int(c.header.Size())
+	}
+	if c.auth != nil {
+		overhead += c.auth.NonceSize() + c.auth.Overhead()
+	}
+	// quic-go never sends this much (its packets stay within 1452 bytes), but
+	// failing the write beats Seal outgrowing the pooled buffer and panicking
+	if len(p)+overhead > len(buffer) {
+		return 0, errPacketTooLarge
+	}
 	if c.header != nil {
 		c.header.Serialize(payload)
 		n = int(c.header.Size())
@@ -175,7 +198,13 @@ func (c *interConn) Write(b []byte) (int, error) {
 	return c.stream.Write(b)
 }
 
+// Close ends both directions. stream.Close alone only sends FIN: quic-go keeps
+// the stream, and any data still arriving on it, until its read side has
+// returned EOF or been cancelled, and a Read blocked in another goroutine would
+// stay blocked. CancelRead releases the read side and tells the peer to stop
+// sending (as the hysteria transport does).
 func (c *interConn) Close() error {
+	c.stream.CancelRead(0)
 	return c.stream.Close()
 }
 

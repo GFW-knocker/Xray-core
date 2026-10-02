@@ -17,6 +17,7 @@ import (
 // Listener is an internet.Listener that listens for TCP connections.
 type Listener struct {
 	rawConn  *sysConn
+	tr       *quic.Transport
 	listener *quic.Listener
 	done     *done.Instance
 	addConn  internet.ConnHandler
@@ -75,7 +76,10 @@ func (l *Listener) Addr() net.Addr {
 func (l *Listener) Close() error {
 	l.done.Close()
 	l.listener.Close()
+	// socket first: it ends the transport's read loop, which Transport.Close
+	// waits for, and tears down every connection still open on it
 	l.rawConn.Close()
+	l.tr.Close()
 	return nil
 }
 
@@ -88,8 +92,12 @@ func Listen(ctx context.Context, address net.Address, port net.Port, streamSetti
 	tlsConfig := tls.ConfigFromStreamSettings(streamSettings)
 	if tlsConfig == nil {
 		ct, _ := cert.MustGenerate(nil, cert.DNSNames(internalDomain), cert.CommonName(internalDomain))
+		internalCert := tls.ParseCertificate(ct)
+		// generated in memory, so there is nothing to hot-reload; the reload
+		// goroutine would only rewrite it every hour under running handshakes
+		internalCert.OneTimeLoading = true
 		tlsConfig = &tls.Config{
-			Certificate: []*tls.Certificate{tls.ParseCertificate(ct)},
+			Certificate: []*tls.Certificate{internalCert},
 		}
 	}
 
@@ -110,24 +118,32 @@ func Listen(ctx context.Context, address net.Address, port net.Port, streamSetti
 		MaxIncomingUniStreams: -1,
 	}
 
-	conn, err := wrapSysConn(rawConn.(*net.UDPConn), config)
+	udpConn, ok := rawConn.(*net.UDPConn)
+	if !ok {
+		rawConn.Close()
+		return nil, errors.New("QUIC with sockopt is unsupported")
+	}
+	conn, err := wrapSysConn(udpConn, config)
 	if err != nil {
-		conn.Close()
+		// conn is nil here
+		rawConn.Close()
 		return nil, err
 	}
-	tr := quic.Transport{
+	tr := &quic.Transport{
 		ConnectionIDLength: 12,
 		Conn:               conn,
 	}
 	qListener, err := tr.Listen(tlsConfig.GetTLSConfig(), quicConfig)
 	if err != nil {
 		conn.Close()
+		tr.Close()
 		return nil, err
 	}
 
 	listener := &Listener{
 		done:     done.New(),
 		rawConn:  conn,
+		tr:       tr,
 		listener: qListener,
 		addConn:  handler,
 	}
