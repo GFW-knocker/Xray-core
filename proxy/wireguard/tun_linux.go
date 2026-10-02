@@ -274,10 +274,15 @@ func KernelTunSupported() (bool, error) {
 	hdr.Version = unix.LINUX_CAPABILITY_VERSION_3
 	hdr.Pid = 0 // 0 means current process
 
-	var data unix.CapUserData
-	if err := unix.Capget(&hdr, &data); err != nil {
+	// (Knocker) version 3 capabilities are 64-bit, so the kernel writes two CapUserData
+	// (24 bytes). A single struct let it overwrite 12 bytes of the stack after it, which
+	// zeroed a saved return address on Android armv7 and crashed the runtime on the
+	// next stack growth ("traceback did not unwind completely").
+	var data [2]unix.CapUserData
+	if err := unix.Capget(&hdr, &data[0]); err != nil {
 		return false, fmt.Errorf("failed to get capabilities: %v", err)
 	}
 
-	return (data.Effective & (1 << unix.CAP_NET_ADMIN)) != 0, nil
+	// CAP_NET_ADMIN (12) is in the low 32 bits, i.e. data[0]
+	return (data[0].Effective & (1 << unix.CAP_NET_ADMIN)) != 0, nil
 }
