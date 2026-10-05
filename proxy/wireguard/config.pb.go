@@ -169,6 +169,8 @@ type DeviceConfig struct {
 	Wnoisedelay    string                      `protobuf:"bytes,12,opt,name=wnoisedelay,proto3" json:"wnoisedelay,omitempty"`
 	Wpayloadsize   string                      `protobuf:"bytes,13,opt,name=wpayloadsize,proto3" json:"wpayloadsize,omitempty"`
 	DNS            []string                    `protobuf:"bytes,14,rep,name=DNS,proto3" json:"DNS,omitempty"`
+	Wrotation      int32                       `protobuf:"varint,15,opt,name=wrotation,proto3" json:"wrotation,omitempty"`
+	Wrotationgrace int32                       `protobuf:"varint,16,opt,name=wrotationgrace,proto3" json:"wrotationgrace,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -301,6 +303,20 @@ func (x *DeviceConfig) GetDNS() []string {
 	return nil
 }
 
+func (x *DeviceConfig) GetWrotation() int32 {
+	if x != nil {
+		return x.Wrotation
+	}
+	return 0
+}
+
+func (x *DeviceConfig) GetWrotationgrace() int32 {
+	if x != nil {
+		return x.Wrotationgrace
+	}
+	return 0
+}
+
 var File_proxy_wireguard_config_proto protoreflect.FileDescriptor
 
 const file_proxy_wireguard_config_proto_rawDesc = "" +
@@ -315,7 +331,7 @@ const file_proxy_wireguard_config_proto_rawDesc = "" +
 	"\n" +
 	"keep_alive\x18\x04 \x01(\tR\tkeepAlive\x12\x1f\n" +
 	"\vallowed_ips\x18\x05 \x03(\tR\n" +
-	"allowedIps\"\xee\x04\n" +
+	"allowedIps\"\xb4\x05\n" +
 	"\fDeviceConfig\x12\x1d\n" +
 	"\n" +
 	"secret_key\x18\x01 \x01(\tR\tsecretKey\x12\x1a\n" +
@@ -332,7 +348,9 @@ const file_proxy_wireguard_config_proto_rawDesc = "" +
 	"\vwnoisecount\x18\v \x01(\tR\vwnoisecount\x12 \n" +
 	"\vwnoisedelay\x18\f \x01(\tR\vwnoisedelay\x12\"\n" +
 	"\fwpayloadsize\x18\r \x01(\tR\fwpayloadsize\x12\x10\n" +
-	"\x03DNS\x18\x0e \x03(\tR\x03DNS\"\\\n" +
+	"\x03DNS\x18\x0e \x03(\tR\x03DNS\x12\x1c\n" +
+	"\twrotation\x18\x0f \x01(\x05R\twrotation\x12&\n" +
+	"\x0ewrotationgrace\x18\x10 \x01(\x05R\x0ewrotationgrace\"\\\n" +
 	"\x0eDomainStrategy\x12\f\n" +
 	"\bFORCE_IP\x10\x00\x12\r\n" +
 	"\tFORCE_IP4\x10\x01\x12\r\n" +

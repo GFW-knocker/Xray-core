@@ -39,4 +39,6 @@ message DeviceConfig {
   string wnoisedelay = 12;
   string wpayloadsize = 13;
   repeated string DNS = 14;
+  int32 wrotation = 15;
+  int32 wrotationgrace = 16;
 }

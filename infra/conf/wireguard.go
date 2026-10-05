@@ -70,6 +70,8 @@ type WireGuardConfig struct {
 	Wnoisecount    string                 `json:"wnoisecount"`
 	Wnoisedelay    string                 `json:"wnoisedelay"`
 	Wpayloadsize   string                 `json:"wpayloadsize"`
+	Wrotation      int32                  `json:"wrotation"`
+	Wrotationgrace int32                  `json:"wrotationgrace"`
 	DNS            []string               `json:"remoteDNS"`
 }
 
@@ -80,6 +82,8 @@ func (c *WireGuardConfig) Build() (proto.Message, error) {
 	config.Wnoisecount = c.Wnoisecount
 	config.Wnoisedelay = c.Wnoisedelay
 	config.Wpayloadsize = c.Wpayloadsize
+	config.Wrotation = c.Wrotation
+	config.Wrotationgrace = c.Wrotationgrace
 
 	var err error
 	config.SecretKey, err = ParseWireGuardKey(c.SecretKey)

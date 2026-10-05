@@ -436,12 +436,21 @@ func (h *Handler) init(ctx context.Context) error {
 
 	// ------ GFW-knocker --------------------
 
+	// wrotation = datagrams per source port, 0 = off (see bind.go)
+	// wrotationgrace = seconds a retired port stays readable, 0 = default
+	rotateN := int(h.conf.Wrotation)
+	if rotateN > 0 {
+		errors.LogInfo(context.Background(), "wireguard source-port rotation every ", rotateN, " packets")
+	}
+
 	// device.NewDevice may use the bind right away (Up -> BindUpdate -> Open),
 	// so everything it reads must be set before creating the device.
 	bind := &bind{
 		resolveFunc: resolveFunc,
 		listenFunc:  listenFunc,
 		reserved:    h.conf.Reserved,
+		rotateN:     rotateN,
+		retireGrace: time.Duration(h.conf.Wrotationgrace) * time.Second,
 		// ------ GFW-knocker --------------------
 		// read by the device (Get_extra_data) for its very first handshake
 		Wnoise:           h.conf.Wnoise,
