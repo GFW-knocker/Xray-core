@@ -49,11 +49,11 @@ func (c *QUICConfig) Build() (proto.Message, error) {
 	if len(c.Header) > 0 {
 		headerConfig, _, err := kcpHeaderLoader.Load(c.Header)
 		if err != nil {
-			return nil, errors.New("invalid QUIC header config.").Base(err).AtError()
+			return nil, errors.New("invalid QUIC header config.").Base(err)
 		}
 		ts, err := headerConfig.(Buildable).Build()
 		if err != nil {
-			return nil, errors.New("invalid QUIC header config").Base(err).AtError()
+			return nil, errors.New("invalid QUIC header config").Base(err)
 		}
 		config.Header = serial.ToTypedMessage(ts)
 	}

@@ -216,7 +216,7 @@ func (s *clientConnections) openConnection(ctx context.Context, destAddr net.Add
 func dialConnection(ctx context.Context, dest net.Destination, destAddr net.Addr, config *Config, tlsConfig *tls.Config, sockopt *internet.SocketConfig, quicVersion *atomic.Int32) (*connectionContext, error) {
 	rawConn, err := internet.DialSystem(ctx, dest, sockopt)
 	if err != nil {
-		return nil, errors.New("failed to dial to dest: ", err).AtWarning().Base(err)
+		return nil, errors.New("failed to dial to dest: ", err).Base(err)
 	}
 
 	quicConfig := &quic.Config{
@@ -231,13 +231,13 @@ func dialConnection(ctx context.Context, dest net.Destination, destAddr net.Addr
 	switch conn := rawConn.(type) {
 	case *net.UDPConn:
 		udpConn = conn
-	case *internet.PacketConnWrapper:
+	case *net.PacketConnWrapper:
 		udpConn, _ = conn.PacketConn.(*net.UDPConn)
 	}
 	if udpConn == nil {
 		// TODO: Support sockopt for QUIC
 		rawConn.Close()
-		return nil, errors.New("QUIC with sockopt is unsupported").AtWarning()
+		return nil, errors.New("QUIC with sockopt is unsupported")
 	}
 
 	sysConn, err := wrapSysConn(udpConn, config)

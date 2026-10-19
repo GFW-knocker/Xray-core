@@ -18,13 +18,22 @@ import (
 	"github.com/GFW-knocker/Xray-core/proxy/shadowsocks_2022"
 	"github.com/GFW-knocker/Xray-core/testing/servers/tcp"
 	"github.com/GFW-knocker/Xray-core/testing/servers/udp"
-	"github.com/sagernet/sing-shadowsocks/shadowaead_2022"
 	"golang.org/x/sync/errgroup"
 )
 
+var ss2022Methods = []string{
+	shadowsocks_2022.MethodAES128GCM,
+	shadowsocks_2022.MethodAES256GCM,
+	shadowsocks_2022.MethodChaCha20Poly1305,
+}
+
 func TestShadowsocks2022Tcp(t *testing.T) {
-	for _, method := range shadowaead_2022.List {
-		password := make([]byte, 32)
+	for _, method := range ss2022Methods {
+		keySize := 32
+		if method == shadowsocks_2022.MethodAES128GCM {
+			keySize = 16
+		}
+		password := make([]byte, keySize)
 		rand.Read(password)
 		t.Run(method, func(t *testing.T) {
 			testShadowsocks2022Tcp(t, method, base64.StdEncoding.EncodeToString(password))
@@ -33,21 +42,21 @@ func TestShadowsocks2022Tcp(t *testing.T) {
 }
 
 func TestShadowsocks2022UdpAES128(t *testing.T) {
-	password := make([]byte, 32)
+	password := make([]byte, 16)
 	rand.Read(password)
-	testShadowsocks2022Udp(t, shadowaead_2022.List[0], base64.StdEncoding.EncodeToString(password))
+	testShadowsocks2022Udp(t, shadowsocks_2022.MethodAES128GCM, base64.StdEncoding.EncodeToString(password))
 }
 
 func TestShadowsocks2022UdpAES256(t *testing.T) {
 	password := make([]byte, 32)
 	rand.Read(password)
-	testShadowsocks2022Udp(t, shadowaead_2022.List[1], base64.StdEncoding.EncodeToString(password))
+	testShadowsocks2022Udp(t, shadowsocks_2022.MethodAES256GCM, base64.StdEncoding.EncodeToString(password))
 }
 
 func TestShadowsocks2022UdpChacha(t *testing.T) {
 	password := make([]byte, 32)
 	rand.Read(password)
-	testShadowsocks2022Udp(t, shadowaead_2022.List[2], base64.StdEncoding.EncodeToString(password))
+	testShadowsocks2022Udp(t, shadowsocks_2022.MethodChaCha20Poly1305, base64.StdEncoding.EncodeToString(password))
 }
 
 func testShadowsocks2022Tcp(t *testing.T, method string, password string) {

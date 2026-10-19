@@ -472,7 +472,7 @@ func NewPacketReader(conn net.Conn, h *Handler, defaultRule *FinalRule, UDPOverr
 	if statConn != nil {
 		counter = statConn.ReadCounter
 	}
-	if c, ok := iConn.(*internet.PacketConnWrapper); ok {
+	if c, ok := iConn.(*net.PacketConnWrapper); ok {
 		isOverridden := false
 		if UDPOverride.Address != nil || UDPOverride.Port != 0 {
 			isOverridden = true
@@ -492,7 +492,7 @@ func NewPacketReader(conn net.Conn, h *Handler, defaultRule *FinalRule, UDPOverr
 }
 
 type PacketReader struct {
-	*internet.PacketConnWrapper
+	*net.PacketConnWrapper
 	stats.Counter
 	Handler           *Handler
 	DefaultRule       *FinalRule
@@ -547,7 +547,7 @@ func NewPacketWriter(conn net.Conn, h *Handler, defaultRule *FinalRule, UDPOverr
 	if statConn != nil {
 		counter = statConn.WriteCounter
 	}
-	if c, ok := iConn.(*internet.PacketConnWrapper); ok {
+	if c, ok := iConn.(*net.PacketConnWrapper); ok {
 		// If DialDest is a domain, it will be resolved in dialer
 		// check this behavior and add it to map
 		resolvedUDPAddr := utils.NewTypedSyncMap[string, net.Address]()
@@ -568,7 +568,7 @@ func NewPacketWriter(conn net.Conn, h *Handler, defaultRule *FinalRule, UDPOverr
 }
 
 type PacketWriter struct {
-	*internet.PacketConnWrapper
+	*net.PacketConnWrapper
 	stats.Counter
 	*Handler
 	DefaultRule *FinalRule

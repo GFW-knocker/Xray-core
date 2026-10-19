@@ -2,7 +2,7 @@ package hysteria
 
 import (
 	"context"
-	go_tls "crypto/tls"
+	gotls "crypto/tls"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -16,6 +16,7 @@ import (
 	"github.com/GFW-knocker/Xray-core/common/errors"
 	"github.com/GFW-knocker/Xray-core/common/net"
 	"github.com/GFW-knocker/Xray-core/common/net/cnc"
+	"github.com/GFW-knocker/Xray-core/core"
 	"github.com/GFW-knocker/Xray-core/transport/internet"
 	"github.com/GFW-knocker/Xray-core/transport/internet/finalmask"
 	"github.com/GFW-knocker/Xray-core/transport/internet/hysteria/congestion"
@@ -28,14 +29,15 @@ import (
 )
 
 type client struct {
-	sync.Mutex
-
-	dest           net.Destination
-	config         *Config
-	tlsConfig      *go_tls.Config
-	socketConfig   *internet.SocketConfig
-	udpmaskManager *finalmask.UdpmaskManager
-	quicParams     *internet.QuicParams
+	lock         chan struct{}
+	instance     *core.Instance
+	forced       bool
+	dest         net.Destination
+	config       *Config
+	tlsConfig    *gotls.Config
+	socketConfig *internet.SocketConfig
+	finalMask    *finalmask.FinalMask
+	quicParams   *internet.QuicParams
 
 	// quicVersion remembers which quicdial attempt last connected, so the
 	// v2->v1 fallback is not re-paid on every reconnect.
@@ -70,11 +72,14 @@ func (c *client) close() {
 }
 
 func (c *client) dial(ctx context.Context) error {
-	status := c.status()
-	if status == StatusActive {
-		return nil
+	if c.forced {
+		return errors.New("client is closed")
 	}
-	if status == StatusInactive {
+
+	switch c.status() {
+	case StatusActive:
+		return nil
+	case StatusInactive:
 		c.close()
 	}
 
@@ -100,7 +105,7 @@ func (c *client) dial(ctx context.Context) error {
 		ChromeParrot:                   !quicParams.DisableChromeParrot,
 		EnableDatagrams:                true,
 		MaxDatagramFrameSize:           MaxDatagramFrameSize,
-		OmitMaxDatagramFrameSize:       time.Now().After(time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)),
+		OmitMaxDatagramFrameSize:       true,
 		DisablePathManager:             true,
 	}
 	if quicParams.InitStreamReceiveWindow == 0 {
@@ -123,30 +128,29 @@ func (c *client) dial(ctx context.Context) error {
 	// }
 
 	var pktConn net.PacketConn
-	var udpAddr *net.UDPAddr
-
-	raw, err := internet.DialSystem(ctx, c.dest, c.socketConfig)
-	if err != nil {
-		return errors.New("failed to dial to dest").Base(err)
-	}
-	switch c := raw.(type) {
-	case *internet.PacketConnWrapper:
-		pktConn = c.PacketConn
-		udpAddr = raw.RemoteAddr().(*net.UDPAddr)
-	case *cnc.Connection:
-		pktConn = &internet.FakePacketConn{Conn: c}
-		udpAddr = &net.UDPAddr{IP: c.RemoteAddr().(*net.TCPAddr).IP, Port: c.RemoteAddr().(*net.TCPAddr).Port}
-	default:
-		panic(reflect.TypeOf(c))
-	}
-
-	if c.udpmaskManager != nil {
-		newConn, err := c.udpmaskManager.WrapPacketConnClient(pktConn)
+	var udpAddr net.Addr
+	if c.finalMask != nil {
+		conn, err := c.finalMask.DialUDP(ctx, c.dest)
 		if err != nil {
-			pktConn.Close()
-			return errors.New("mask err").Base(err)
+			return errors.New("failed to dial to dest").Base(err)
 		}
-		pktConn = newConn
+		pktConn = conn.(*net.PacketConnWrapper).PacketConn
+		udpAddr = conn.RemoteAddr()
+	} else {
+		conn, err := internet.DialSystem(ctx, c.dest, c.socketConfig)
+		if err != nil {
+			return errors.New("failed to dial to dest").Base(err)
+		}
+		switch c := conn.(type) {
+		case *net.PacketConnWrapper:
+			pktConn = c.PacketConn
+			udpAddr = c.RemoteAddr()
+		case *cnc.Connection:
+			pktConn = &internet.FakePacketConn{Conn: c}
+			udpAddr = &net.UDPAddr{IP: []byte{0, 0, 0, 0}}
+		default:
+			panic(reflect.TypeOf(c))
+		}
 	}
 
 	tr := &quic.Transport{Conn: pktConn, DisableGSO: quicParams.DisableGSO}
@@ -160,7 +164,7 @@ func (c *client) dial(ctx context.Context) error {
 	rt := &http3.Transport{
 		TLSClientConfig: c.tlsConfig,
 		QUICConfig:      quicConfig,
-		Dial: func(ctx context.Context, _ string, tlsCfg *go_tls.Config, cfg *quic.Config) (*quic.Conn, error) {
+		Dial: func(ctx context.Context, _ string, tlsCfg *gotls.Config, cfg *quic.Config) (*quic.Conn, error) {
 			qc, err := quicdial.Dial(ctx, cfg, quicdial.H3, &c.quicVersion,
 				func(cfg *quic.Config) (*quic.Conn, error) {
 					return tr.DialEarly(ctx, udpAddr, tlsCfg, cfg)
@@ -185,8 +189,9 @@ func (c *client) dial(ctx context.Context) error {
 			CommonHeaderPadding: []string{AuthRequestPadding.String()},
 		},
 	}
-	resp, err := rt.RoundTrip(req)
+	resp, err := rt.RoundTrip(req.WithContext(ctx))
 	if err != nil {
+		_ = rt.Close()
 		if conn != nil {
 			_ = conn.CloseWithError(closeErrCodeProtocolError, "")
 		}
@@ -194,13 +199,15 @@ func (c *client) dial(ctx context.Context) error {
 		_ = pktConn.Close()
 		return err
 	}
+	_ = resp.Body.Close()
+
 	if resp.StatusCode != StatusAuthOK {
+		_ = rt.Close()
 		_ = conn.CloseWithError(closeErrCodeProtocolError, "")
 		_ = tr.Close()
 		_ = pktConn.Close()
 		return errors.New("auth failed code ", resp.StatusCode)
 	}
-	_ = resp.Body.Close()
 
 	// udp, _ := strconv.ParseBool(resp.Header.Get(ResponseHeaderUDPEnabled))
 	down, _ := strconv.ParseUint(resp.Header.Get(CommonHeaderCCRX), 10, 64)
@@ -235,9 +242,17 @@ func (c *client) dial(ctx context.Context) error {
 	return nil
 }
 
+func (c *client) unlock() {
+	<-c.lock
+}
+
 func (c *client) tcp(ctx context.Context) (stat.Connection, error) {
-	c.Lock()
-	defer c.Unlock()
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case c.lock <- struct{}{}:
+		defer c.unlock()
+	}
 
 	err := c.dial(ctx)
 	if err != nil {
@@ -255,12 +270,17 @@ func (c *client) tcp(ctx context.Context) (stat.Connection, error) {
 		remote: c.conn.RemoteAddr(),
 
 		client: true,
+		lock:   make(chan struct{}, 1),
 	}, nil
 }
 
 func (c *client) udp(ctx context.Context) (stat.Connection, error) {
-	c.Lock()
-	defer c.Unlock()
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case c.lock <- struct{}{}:
+		defer c.unlock()
+	}
 
 	err := c.dial(ctx)
 	if err != nil {
@@ -270,12 +290,15 @@ func (c *client) udp(ctx context.Context) (stat.Connection, error) {
 	return c.udpSM.udp()
 }
 
-func (c *client) clean() {
-	c.Lock()
-	if c.status() == StatusInactive {
+func (c *client) clean(force bool) {
+	c.lock <- struct{}{}
+	if force {
+		c.forced = true
+	}
+	if status := c.status(); force && status != StatusNull || status == StatusInactive {
 		c.close()
 	}
-	c.Unlock()
+	c.unlock()
 }
 
 type dialerConf struct {
@@ -292,10 +315,20 @@ func (m *clientManager) clean() {
 	ticker := time.NewTicker(idleCleanupInterval)
 	for range ticker.C {
 		m.RLock()
-		for _, c := range m.m {
-			c.clean()
+		entries := make(map[dialerConf]*client, len(m.m))
+		for k, c := range m.m {
+			entries[k] = c
 		}
 		m.RUnlock()
+		for k, c := range entries {
+			force := c.instance != nil && !c.instance.IsRunning()
+			c.clean(force)
+			if force {
+				m.Lock()
+				delete(m.m, k)
+				m.Unlock()
+			}
+		}
 	}
 }
 
@@ -320,23 +353,27 @@ func Dial(ctx context.Context, dest net.Destination, streamSettings *internet.Me
 		go manager.clean()
 	})
 
+	dialerConfKey := dialerConf{dest, streamSettings}
+
 	manager.RLock()
-	c := manager.m[dialerConf{dest, streamSettings}]
+	c := manager.m[dialerConfKey]
 	manager.RUnlock()
 
 	if c == nil {
 		manager.Lock()
-		c = manager.m[dialerConf{dest, streamSettings}]
+		c = manager.m[dialerConfKey]
 		if c == nil {
 			c = &client{
-				dest:           dest,
-				config:         streamSettings.ProtocolSettings.(*Config),
-				tlsConfig:      tlsConfig.GetTLSConfig(tls.WithDestination(dest)),
-				socketConfig:   streamSettings.SocketSettings,
-				udpmaskManager: streamSettings.UdpmaskManager,
-				quicParams:     streamSettings.QuicParams,
+				lock:         make(chan struct{}, 1),
+				instance:     core.FromContext(ctx),
+				dest:         dest,
+				config:       streamSettings.ProtocolSettings.(*Config),
+				tlsConfig:    tlsConfig.GetTLSConfig(tls.WithDestination(dest)),
+				socketConfig: streamSettings.SocketSettings,
+				finalMask:    streamSettings.FinalMask,
+				quicParams:   streamSettings.QuicParams,
 			}
-			manager.m[dialerConf{dest, streamSettings}] = c
+			manager.m[dialerConfKey] = c
 		}
 		manager.Unlock()
 	}

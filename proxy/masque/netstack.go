@@ -38,7 +38,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/GFW-knocker/Xray-core/transport/internet"
+	xnet "github.com/GFW-knocker/Xray-core/common/net"
 
 	"golang.org/x/net/dns/dnsmessage"
 	"gvisor.dev/gvisor/pkg/buffer"
@@ -306,7 +306,7 @@ func (tun *netTun) DialUDPAddrPort(laddr, raddr netip.AddrPort) (net.Conn, error
 	if err != nil {
 		return nil, err
 	}
-	return &internet.PacketConnWrapper{
+	return &xnet.PacketConnWrapper{
 		PacketConn: conn,
 		Dest:       net.UDPAddrFromAddrPort(raddr),
 	}, nil

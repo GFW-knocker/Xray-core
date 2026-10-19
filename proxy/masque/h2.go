@@ -71,19 +71,15 @@ func (h *Handler) dialTLSConn(ctx context.Context) (net.Conn, error) {
 			"since the uTLS path cannot carry the client certificate this protocol needs")
 	}
 
-	raw, err := internet.DialSystem(ctx, h.endpoint, h.streamSettings.SocketSettings)
+	// With tcpmasks the FinalMask dials and wraps the connection itself.
+	var conn net.Conn
+	if h.streamSettings.FinalMask != nil {
+		conn, err = h.streamSettings.FinalMask.DialTCP(ctx, h.endpoint)
+	} else {
+		conn, err = internet.DialSystem(ctx, h.endpoint, h.streamSettings.SocketSettings)
+	}
 	if err != nil {
 		return nil, errors.New("masque: failed to reach ", h.endpoint).Base(err)
-	}
-
-	conn := net.Conn(raw)
-	if h.streamSettings.TcpmaskManager != nil {
-		masked, err := h.streamSettings.TcpmaskManager.WrapConnClient(conn)
-		if err != nil {
-			conn.Close()
-			return nil, errors.New("masque: failed to apply the tcp masks").Base(err)
-		}
-		conn = masked
 	}
 
 	tlsConn := gotls.Client(conn, tlsConfig)

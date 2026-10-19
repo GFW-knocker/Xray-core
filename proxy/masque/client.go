@@ -459,7 +459,7 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
 		}
 		defer conn.Close()
 		packets := &udpConn{
-			PacketConn: conn.(*internet.PacketConnWrapper).PacketConn,
+			PacketConn: conn.(*net.PacketConnWrapper).PacketConn,
 			resolve:    h.resolveRemote,
 			dest:       gonet.UDPAddrFromAddrPort(addrPort),
 		}

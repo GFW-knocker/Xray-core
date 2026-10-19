@@ -64,6 +64,7 @@ import (
 	_ "github.com/GFW-knocker/Xray-core/transport/internet/tls"
 	_ "github.com/GFW-knocker/Xray-core/transport/internet/udp"
 	_ "github.com/GFW-knocker/Xray-core/transport/internet/websocket"
+	_ "github.com/GFW-knocker/Xray-core/transport/internet/xdrive"
 
 	// Transport headers
 	_ "github.com/GFW-knocker/Xray-core/transport/internet/headers/http"

@@ -192,9 +192,17 @@ func (s *Server) processTCP(ctx context.Context, conn stat.Connection, dispatche
 			s.udpFilter.Add(conn.RemoteAddr())
 		}
 		tempUDPConn.SetTimeout(plcy.Timeouts.ConnectionIdle)
+		var udpConn stat.Connection = tempUDPConn
+		if counters, ok := conn.(*stat.CounterConnection); ok {
+			udpConn = &stat.CounterConnection{
+				Connection:   tempUDPConn,
+				ReadCounter:  counters.ReadCounter,
+				WriteCounter: counters.WriteCounter,
+			}
+		}
 		errCh := make(chan error, 1)
 		go func() {
-			errCh <- s.handleUDPPayload(ctx, tempUDPConn, dispatcher)
+			errCh <- s.handleUDPPayload(ctx, udpConn, dispatcher)
 		}()
 		// Associated TCP keeps the UDP alive
 		// Close UDP if TCP connection is closed

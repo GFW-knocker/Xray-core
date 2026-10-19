@@ -23,6 +23,7 @@ import (
 	"github.com/GFW-knocker/Xray-core/transport/internet/splithttp"
 	"github.com/GFW-knocker/Xray-core/transport/internet/tcp"
 	"github.com/GFW-knocker/Xray-core/transport/internet/websocket"
+	"github.com/GFW-knocker/Xray-core/transport/internet/xdrive"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -121,7 +122,7 @@ func (v *AuthenticatorRequest) Build() (*http.RequestConfig, error) {
 		for _, key := range headerNames {
 			value := v.Headers[key]
 			if value == nil {
-				return nil, errors.New("empty HTTP header value: " + key).AtError()
+				return nil, errors.New("empty HTTP header value: " + key)
 			}
 			config.Header = append(config.Header, &http.Header{
 				Name:  key,
@@ -189,7 +190,7 @@ func (v *AuthenticatorResponse) Build() (*http.ResponseConfig, error) {
 		for _, key := range headerNames {
 			value := v.Headers[key]
 			if value == nil {
-				return nil, errors.New("empty HTTP header value: " + key).AtError()
+				return nil, errors.New("empty HTTP header value: " + key)
 			}
 			config.Header = append(config.Header, &http.Header{
 				Name:  key,
@@ -239,11 +240,11 @@ func (c *TCPConfig) Build() (proto.Message, error) {
 	if len(c.HeaderConfig) > 0 {
 		headerConfig, _, err := tcpHeaderLoader.Load(c.HeaderConfig)
 		if err != nil {
-			return nil, errors.New("invalid TCP header config").Base(err).AtError()
+			return nil, errors.New("invalid TCP header config").Base(err)
 		}
 		ts, err := headerConfig.(Buildable).Build()
 		if err != nil {
-			return nil, errors.New("invalid TCP header config").Base(err).AtError()
+			return nil, errors.New("invalid TCP header config").Base(err)
 		}
 		config.HeaderSettings = serial.ToTypedMessage(ts)
 	}
@@ -793,4 +794,55 @@ func readFileOrString(f string, s []string) ([]byte, error) {
 		return []byte(strings.Join(s, "\n")), nil
 	}
 	return nil, errors.New("both file and bytes are empty.")
+}
+
+type XDriveConfig struct {
+	RemoteFolder      string          `json:"remoteFolder"`
+	Service           string          `json:"service"`
+	Secrets           []string        `json:"secrets"`
+	SegmentBytes      uint32          `json:"segmentBytes"`
+	FlushIntervalMs   uint32          `json:"flushIntervalMs"`
+	PollIntervalMs    uint32          `json:"pollIntervalMs"`
+	MaxPollIntervalMs uint32          `json:"maxPollIntervalMs"`
+	SessionTTLSeconds uint32          `json:"sessionTtlSeconds"`
+	Concurrency       uint32          `json:"concurrency"`
+	EagerWindowMs     uint32          `json:"eagerWindowMs"`
+	HoleTimeoutMs     uint32          `json:"holeTimeoutMs"`
+	Template          json.RawMessage `json:"template"`
+}
+
+// Build implements Buildable.
+func (c *XDriveConfig) Build() (proto.Message, error) {
+	switch c.Service {
+	case "local":
+	case "Google Drive":
+		errors.PrintDeprecatedFeatureWarning(`"service": "Google Drive"`, `"service": "google-drive"`)
+		c.Service = "google-drive"
+		fallthrough
+	case "google-drive":
+		if len(c.Secrets) != 3 {
+			return nil, errors.New("Google Drive needs 3 secrets in order of ClientID, ClientSecret, RefreshToken")
+		}
+	case "template":
+		if len(c.Template) == 0 {
+			return nil, errors.New(`service "template" needs a "template" object`)
+		}
+	default:
+		return nil, errors.New(`unknown "service": "`, c.Service, `", use "google-drive", "template" or "local"`)
+	}
+	config := &xdrive.Config{
+		RemoteFolder:      c.RemoteFolder,
+		Service:           c.Service,
+		Secrets:           c.Secrets,
+		SegmentBytes:      c.SegmentBytes,
+		FlushIntervalMs:   c.FlushIntervalMs,
+		PollIntervalMs:    c.PollIntervalMs,
+		MaxPollIntervalMs: c.MaxPollIntervalMs,
+		SessionTtlSeconds: c.SessionTTLSeconds,
+		Concurrency:       c.Concurrency,
+		EagerWindowMs:     c.EagerWindowMs,
+		HoleTimeoutMs:     c.HoleTimeoutMs,
+		Template:          string(c.Template),
+	}
+	return config, nil
 }

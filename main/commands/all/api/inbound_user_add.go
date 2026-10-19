@@ -12,6 +12,7 @@ import (
 	"github.com/GFW-knocker/Xray-core/core"
 	"github.com/GFW-knocker/Xray-core/infra/conf"
 	"github.com/GFW-knocker/Xray-core/infra/conf/serial"
+	"github.com/GFW-knocker/Xray-core/proxy/hysteria"
 	mvlessin "github.com/GFW-knocker/Xray-core/proxy/mvless/inbound"
 	"github.com/GFW-knocker/Xray-core/proxy/shadowsocks"
 	"github.com/GFW-knocker/Xray-core/proxy/shadowsocks_2022"
@@ -90,6 +91,8 @@ func extractInboundUsers(inb *core.InboundHandlerConfig) []*protocol.User {
 	case *shadowsocks.ServerConfig:
 		return ty.Users
 	case *shadowsocks_2022.MultiUserServerConfig:
+		return ty.Users
+	case *hysteria.ServerConfig:
 		return ty.Users
 	default:
 		fmt.Println("unsupported inbound type")

@@ -330,8 +330,11 @@ func fragmentMaskSettings() *internet.MemoryStreamConfig {
 		DelaysMin:   []int64{0},
 		DelaysMax:   []int64{0},
 	}
+	dialTCP := func(ctx context.Context, dest xnet.Destination) (xnet.Conn, error) {
+		return internet.DialSystem(ctx, dest, nil)
+	}
 	return &internet.MemoryStreamConfig{
-		TcpmaskManager: finalmask.NewTcpmaskManager([]finalmask.Tcpmask{config}),
+		FinalMask: finalmask.NewFinalMask([]finalmask.TCPMask{config}, nil, dialTCP, nil, nil, nil),
 	}
 }
 

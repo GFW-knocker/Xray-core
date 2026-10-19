@@ -94,7 +94,16 @@ func newConnectRequest(authority, path, protocol string) (*http.Request, error) 
 // dialPacketConn opens the socket the tunnel rides on, through Xray's own
 // dialer so that sockopt, dialerProxy chaining and the udpmasks all apply.
 func (h *Handler) dialPacketConn(ctx context.Context) (net.PacketConn, *net.UDPAddr, error) {
-	raw, err := internet.DialSystem(ctx, h.endpoint, h.streamSettings.SocketSettings)
+	// With udpmasks the FinalMask dials and wraps the socket itself, and always
+	// hands back a PacketConnWrapper (a chained dialer's stream included, whose
+	// address is then 0.0.0.0, as chainedRemote would give).
+	var raw net.Conn
+	var err error
+	if h.streamSettings.FinalMask != nil {
+		raw, err = h.streamSettings.FinalMask.DialUDP(ctx, h.endpoint)
+	} else {
+		raw, err = internet.DialSystem(ctx, h.endpoint, h.streamSettings.SocketSettings)
+	}
 	if err != nil {
 		return nil, nil, errors.New("masque: failed to reach ", h.endpoint).Base(err)
 	}
@@ -102,7 +111,7 @@ func (h *Handler) dialPacketConn(ctx context.Context) (net.PacketConn, *net.UDPA
 	var pktConn net.PacketConn
 	var remote *net.UDPAddr
 	switch c := raw.(type) {
-	case *internet.PacketConnWrapper:
+	case *net.PacketConnWrapper:
 		// A real socket, so the address is where packets actually go and has to
 		// be the one it claims to be.
 		addr, ok := raw.RemoteAddr().(*net.UDPAddr)
@@ -120,15 +129,6 @@ func (h *Handler) dialPacketConn(ctx context.Context) (net.PacketConn, *net.UDPA
 	default:
 		raw.Close()
 		return nil, nil, errors.New("masque: the dialer returned a ", reflect.TypeOf(c), ", which cannot carry QUIC")
-	}
-
-	if h.streamSettings.UdpmaskManager != nil {
-		masked, err := h.streamSettings.UdpmaskManager.WrapPacketConnClient(pktConn)
-		if err != nil {
-			pktConn.Close()
-			return nil, nil, errors.New("masque: failed to apply the udp masks").Base(err)
-		}
-		pktConn = masked
 	}
 
 	// Outside the masks, so the noise still goes through them and stays additive

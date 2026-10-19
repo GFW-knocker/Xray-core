@@ -6,31 +6,22 @@ import (
 	"testing"
 
 	. "github.com/GFW-knocker/Xray-core/common/errors"
-	"github.com/GFW-knocker/Xray-core/common/log"
 	"github.com/google/go-cmp/cmp"
 )
 
 func TestError(t *testing.T) {
 	err := New("TestError")
-	if v := GetSeverity(err); v != log.Severity_Info {
-		t.Error("severity: ", v)
+	if v := err.Error(); !strings.Contains(v, "TestError") {
+		t.Error("error: ", v)
 	}
 
 	err = New("TestError2").Base(io.EOF)
-	if v := GetSeverity(err); v != log.Severity_Info {
-		t.Error("severity: ", v)
+	if v := err.Error(); !strings.Contains(v, "EOF") {
+		t.Error("error: ", v)
 	}
 
-	err = New("TestError3").Base(io.EOF).AtWarning()
-	if v := GetSeverity(err); v != log.Severity_Warning {
-		t.Error("severity: ", v)
-	}
-
-	err = New("TestError4").Base(io.EOF).AtWarning()
-	err = New("TestError5").Base(err)
-	if v := GetSeverity(err); v != log.Severity_Warning {
-		t.Error("severity: ", v)
-	}
+	err = New("TestError3").Base(io.EOF)
+	err = New("TestError4").Base(err)
 	if v := err.Error(); !strings.Contains(v, "EOF") {
 		t.Error("error: ", v)
 	}

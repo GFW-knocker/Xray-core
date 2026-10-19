@@ -1,6 +1,7 @@
 package noise
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/binary"
 	"net"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/GFW-knocker/Xray-core/common/crypto"
+	"github.com/GFW-knocker/Xray-core/common/errors"
 )
 
 const asciiLetters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -16,6 +18,8 @@ const asciiLetters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 type noiseConn struct {
 	net.PacketConn
 	config *Config
+	script *scriptEngine
+	noise  []scriptPacket
 	m      map[string]time.Time
 	mu     sync.Mutex
 	// counter feeds the <c> segment of "exp" items
@@ -23,11 +27,19 @@ type noiseConn struct {
 }
 
 func NewConnClient(c *Config, raw net.PacketConn) (net.PacketConn, error) {
-	return &noiseConn{
+	conn := &noiseConn{
 		PacketConn: raw,
 		config:     c,
 		m:          make(map[string]time.Time),
-	}, nil
+	}
+	if c.Script != "" {
+		engine, err := c.engine()
+		if err != nil {
+			return nil, errors.New("failed to initialize the noise script ", c.Script).Base(err)
+		}
+		conn.script = engine
+	}
+	return conn, nil
 }
 
 func NewConnServer(c *Config, raw net.PacketConn) (net.PacketConn, error) {
@@ -41,17 +53,34 @@ func (c *noiseConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 	t := c.m[addr.String()]
 
 	if t.IsZero() || (c.config.ResetMax > 0 && time.Now().After(t)) {
-		for _, item := range c.config.Items {
-			if buf, ok := item.datagram(&c.counter); ok {
-				c.PacketConn.WriteTo(buf, addr)
-			}
-			time.Sleep(time.Duration(crypto.RandBetween(item.DelayMin, item.DelayMax)) * time.Millisecond)
-		}
+		c.sendNoise(addr)
 	}
 
 	c.m[addr.String()] = time.Now().Add(time.Duration(crypto.RandBetween(c.config.ResetMin, c.config.ResetMax)) * time.Second)
 
 	return c.PacketConn.WriteTo(p, addr)
+}
+
+func (c *noiseConn) sendNoise(addr net.Addr) {
+	if c.script != nil {
+		packets, err := c.script.packets(addr.String(), c.noise[:0])
+		if err != nil {
+			errors.LogWarningInner(context.Background(), err, "the noise script produced no packets")
+			return
+		}
+		c.noise = packets
+		for _, packet := range packets {
+			c.PacketConn.WriteTo(packet.packet, addr)
+			time.Sleep(packet.delay)
+		}
+		return
+	}
+	for _, item := range c.config.Items {
+		if buf, ok := item.datagram(&c.counter); ok {
+			c.PacketConn.WriteTo(buf, addr)
+		}
+		time.Sleep(time.Duration(crypto.RandBetween(item.DelayMin, item.DelayMax)) * time.Millisecond)
+	}
 }
 
 // datagram builds the bytes for one noise item.
