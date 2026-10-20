@@ -21,13 +21,13 @@ import (
 	"github.com/GFW-knocker/Xray-core/features/policy"
 	"github.com/GFW-knocker/Xray-core/features/routing"
 	"github.com/GFW-knocker/Xray-core/features/stats"
-	xtun "github.com/GFW-knocker/Xray-core/proxy/tun"
 	"github.com/GFW-knocker/Xray-core/transport"
 	"github.com/GFW-knocker/Xray-core/transport/internet"
 	"github.com/GFW-knocker/Xray-core/transport/internet/stat"
 	"github.com/GFW-knocker/wireguard/device"
 	"github.com/GFW-knocker/wireguard/tun"
 	"golang.org/x/crypto/curve25519"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
 type Server struct {
@@ -43,9 +43,10 @@ type Server struct {
 	uplinkCounter   stats.Counter
 	downlinkCounter stats.Counter
 
-	tun tun.Device
-	dev *device.Device
-	mu  sync.Mutex
+	tun   tun.Device
+	stack *stack.Stack
+	dev   *device.Device
+	mu    sync.Mutex
 
 	pub   [32]byte
 	users *sync.Map
@@ -101,6 +102,11 @@ func NewServer(ctx context.Context, conf *DeviceConfig) (*Server, error) {
 		return nil, err
 	}
 
+	tun, _, stack, err := CreateNetTUN(localAddresses, nil, int(conf.Mtu), false)
+	if err != nil {
+		return nil, err
+	}
+
 	pri := common.Must2(ParseKey(conf.SecretKey))
 	var pub [32]byte
 	curve25519.ScalarBaseMult(&pub, pri)
@@ -127,15 +133,15 @@ func NewServer(ctx context.Context, conf *DeviceConfig) (*Server, error) {
 		uplinkCounter:   uplinkCounter,
 		downlinkCounter: downlinkCounter,
 
+		tun:   tun,
+		stack: stack,
+
 		pub:   pub,
 		users: users,
 	}
-	// The stack hands its connections to s from the first packet on, which the device delivers after Start -> dev.Up.
-	tun, _, err := CreateNetTUN(localAddresses, nil, int(conf.Mtu), s)
-	if err != nil {
-		return nil, err
-	}
-	s.tun = tun
+	// Install the stack's protocol handlers before the device can deliver packets to it (Start -> dev.Up).
+	CreateForwarder(stack, s.HandleConnection)
+	CreateICMPEchoResponder(stack)
 	return s, nil
 }
 
@@ -380,13 +386,9 @@ func (s *Server) HandleConnection(conn net.Conn, dest net.Destination) {
 	})
 	errors.LogInfo(ctx, "processing from ", source, " to ", dest)
 
-	writer := buf.NewWriter(conn)
-	if dest.Network == net.Network_TCP {
-		writer = &xtun.TCPWriter{Writer: writer}
-	}
 	link := &transport.Link{
 		Reader: &buf.TimeoutWrapperReader{Reader: buf.NewReader(conn)},
-		Writer: writer,
+		Writer: buf.NewWriter(conn),
 	}
 	if err := s.dispatcher.DispatchLink(ctx, dest, link); err != nil {
 		errors.LogError(ctx, errors.New("connection closed").Base(err))
