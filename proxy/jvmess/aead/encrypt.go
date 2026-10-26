@@ -8,6 +8,7 @@ import (
 
 	"github.com/GFW-knocker/Xray-core/common"
 	"github.com/GFW-knocker/Xray-core/common/crypto"
+	vmessaead "github.com/GFW-knocker/Xray-core/proxy/vmess/aead"
 )
 
 // SealHeader seals the request header like the stock AEAD layout, except the
@@ -30,9 +31,9 @@ func SealHeader(key [16]byte, data []byte) []byte {
 	var payloadHeaderLengthAEADEncrypted []byte
 
 	{
-		payloadHeaderLengthAEADKey := KDF16(key[:], KDFSaltConstVMessHeaderPayloadLengthAEADKey, string(auth[:]), string(connectionNonce))
+		payloadHeaderLengthAEADKey := vmessaead.KDF16(key[:], vmessaead.KDFSaltConstVMessHeaderPayloadLengthAEADKey, string(auth[:]), string(connectionNonce))
 
-		payloadHeaderLengthAEADNonce := KDF(key[:], KDFSaltConstVMessHeaderPayloadLengthAEADIV, string(auth[:]), string(connectionNonce))[:12]
+		payloadHeaderLengthAEADNonce := vmessaead.KDF(key[:], vmessaead.KDFSaltConstVMessHeaderPayloadLengthAEADIV, string(auth[:]), string(connectionNonce))[:12]
 
 		payloadHeaderAEAD := crypto.NewAesGcm(payloadHeaderLengthAEADKey)
 
@@ -42,9 +43,9 @@ func SealHeader(key [16]byte, data []byte) []byte {
 	var payloadHeaderAEADEncrypted []byte
 
 	{
-		payloadHeaderAEADKey := KDF16(key[:], KDFSaltConstVMessHeaderPayloadAEADKey, string(auth[:]), string(connectionNonce))
+		payloadHeaderAEADKey := vmessaead.KDF16(key[:], vmessaead.KDFSaltConstVMessHeaderPayloadAEADKey, string(auth[:]), string(connectionNonce))
 
-		payloadHeaderAEADNonce := KDF(key[:], KDFSaltConstVMessHeaderPayloadAEADIV, string(auth[:]), string(connectionNonce))[:12]
+		payloadHeaderAEADNonce := vmessaead.KDF(key[:], vmessaead.KDFSaltConstVMessHeaderPayloadAEADIV, string(auth[:]), string(connectionNonce))[:12]
 
 		payloadHeaderAEAD := crypto.NewAesGcm(payloadHeaderAEADKey)
 

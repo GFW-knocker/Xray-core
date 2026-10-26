@@ -7,8 +7,8 @@ import (
 	"github.com/GFW-knocker/Xray-core/common/protocol"
 	"github.com/GFW-knocker/Xray-core/common/serial"
 	. "github.com/GFW-knocker/Xray-core/infra/conf"
-	"github.com/GFW-knocker/Xray-core/proxy/jvmess"
 	"github.com/GFW-knocker/Xray-core/proxy/jvmess/outbound"
+	"github.com/GFW-knocker/Xray-core/proxy/vmess"
 )
 
 func TestJVMessOutbound(t *testing.T) {
@@ -27,7 +27,7 @@ func TestJVMessOutbound(t *testing.T) {
 			User: &protocol.User{
 				Email: "love@example.com",
 				Level: 255,
-				Account: serial.ToTypedMessage(&jvmess.Account{
+				Account: serial.ToTypedMessage(&vmess.Account{
 					Id: "e641f5ad-9397-41e3-bf1a-e8740dfed019",
 					SecuritySettings: &protocol.SecurityConfig{
 						Type: protocol.SecurityType_AUTO,

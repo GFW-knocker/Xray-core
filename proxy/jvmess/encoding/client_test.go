@@ -9,7 +9,7 @@ import (
 	"github.com/GFW-knocker/Xray-core/common/net"
 	"github.com/GFW-knocker/Xray-core/common/protocol"
 	"github.com/GFW-knocker/Xray-core/common/uuid"
-	"github.com/GFW-knocker/Xray-core/proxy/jvmess"
+	"github.com/GFW-knocker/Xray-core/proxy/vmess"
 	vmessaead "github.com/GFW-knocker/Xray-core/proxy/vmess/aead"
 )
 
@@ -17,7 +17,7 @@ func TestEncodeRequestHeaderUsesIDAsKey(t *testing.T) {
 	id := protocol.NewID(uuid.New())
 	header := &protocol.RequestHeader{
 		Version:  Version,
-		User:     &protocol.MemoryUser{Account: &jvmess.MemoryAccount{ID: id, Security: protocol.SecurityType_AES128_GCM}},
+		User:     &protocol.MemoryUser{Account: &vmess.MemoryAccount{ID: id, Security: protocol.SecurityType_AES128_GCM}},
 		Command:  protocol.RequestCommandTCP,
 		Address:  net.DomainAddress("example.com"),
 		Port:     443,

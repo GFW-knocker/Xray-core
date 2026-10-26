@@ -21,8 +21,8 @@ import (
 	"github.com/GFW-knocker/Xray-core/common/xudp"
 	core "github.com/GFW-knocker/Xray-core/core"
 	"github.com/GFW-knocker/Xray-core/features/policy"
-	"github.com/GFW-knocker/Xray-core/proxy/jvmess"
 	"github.com/GFW-knocker/Xray-core/proxy/jvmess/encoding"
+	"github.com/GFW-knocker/Xray-core/proxy/vmess"
 	"github.com/GFW-knocker/Xray-core/transport"
 	"github.com/GFW-knocker/Xray-core/transport/internet"
 	"github.com/GFW-knocker/Xray-core/transport/internet/stat"
@@ -103,7 +103,7 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
 		Option:  protocol.RequestOptionChunkStream,
 	}
 
-	account := request.User.Account.(*jvmess.MemoryAccount)
+	account := request.User.Account.(*vmess.MemoryAccount)
 	request.Security = account.Security
 
 	if request.Security == protocol.SecurityType_AES128_GCM || request.Security == protocol.SecurityType_CHACHA20_POLY1305 {

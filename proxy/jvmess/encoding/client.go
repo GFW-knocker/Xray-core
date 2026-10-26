@@ -17,8 +17,10 @@ import (
 	"github.com/GFW-knocker/Xray-core/common/drain"
 	"github.com/GFW-knocker/Xray-core/common/errors"
 	"github.com/GFW-knocker/Xray-core/common/protocol"
-	"github.com/GFW-knocker/Xray-core/proxy/jvmess"
 	jvmessaead "github.com/GFW-knocker/Xray-core/proxy/jvmess/aead"
+	"github.com/GFW-knocker/Xray-core/proxy/vmess"
+	vmessaead "github.com/GFW-knocker/Xray-core/proxy/vmess/aead"
+	vmessencoding "github.com/GFW-knocker/Xray-core/proxy/vmess/encoding"
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
@@ -61,7 +63,7 @@ func NewClientSession(ctx context.Context, behaviorSeed int64) *ClientSession {
 }
 
 func (c *ClientSession) EncodeRequestHeader(header *protocol.RequestHeader, writer io.Writer) error {
-	account := header.User.Account.(*jvmess.MemoryAccount)
+	account := header.User.Account.(*vmess.MemoryAccount)
 
 	buffer := buf.New()
 	defer buffer.Release()
@@ -103,7 +105,7 @@ func (c *ClientSession) EncodeRequestHeader(header *protocol.RequestHeader, writ
 func (c *ClientSession) EncodeRequestBody(request *protocol.RequestHeader, writer io.Writer) (buf.Writer, error) {
 	var sizeParser crypto.ChunkSizeEncoder = crypto.PlainChunkSizeParser{}
 	if request.Option.Has(protocol.RequestOptionChunkMasking) {
-		sizeParser = NewShakeSizeParser(c.requestBodyIV[:])
+		sizeParser = vmessencoding.NewShakeSizeParser(c.requestBodyIV[:])
 	}
 	var padding crypto.PaddingLengthGenerator
 	if request.Option.Has(protocol.RequestOptionGlobalPadding) {
@@ -123,7 +125,7 @@ func (c *ClientSession) EncodeRequestBody(request *protocol.RequestHeader, write
 			AdditionalDataGenerator: crypto.GenerateEmptyBytes(),
 		}
 		if request.Option.Has(protocol.RequestOptionAuthenticatedLength) {
-			AuthenticatedLengthKey := jvmessaead.KDF16(c.requestBodyKey[:], "auth_len")
+			AuthenticatedLengthKey := vmessaead.KDF16(c.requestBodyKey[:], "auth_len")
 			AuthenticatedLengthKeyAEAD := crypto.NewAesGcm(AuthenticatedLengthKey)
 
 			lengthAuth := &crypto.AEADAuthenticator{
@@ -131,11 +133,11 @@ func (c *ClientSession) EncodeRequestBody(request *protocol.RequestHeader, write
 				NonceGenerator:          GenerateChunkNonce(c.requestBodyIV[:], uint32(aead.NonceSize())),
 				AdditionalDataGenerator: crypto.GenerateEmptyBytes(),
 			}
-			sizeParser = NewAEADSizeParser(lengthAuth)
+			sizeParser = vmessencoding.NewAEADSizeParser(lengthAuth)
 		}
 		return crypto.NewAuthenticationWriter(auth, sizeParser, writer, request.Command.TransferType(), padding), nil
 	case protocol.SecurityType_CHACHA20_POLY1305:
-		aead, err := chacha20poly1305.New(GenerateChacha20Poly1305Key(c.requestBodyKey[:]))
+		aead, err := chacha20poly1305.New(vmessencoding.GenerateChacha20Poly1305Key(c.requestBodyKey[:]))
 		common.Must(err)
 
 		auth := &crypto.AEADAuthenticator{
@@ -144,8 +146,8 @@ func (c *ClientSession) EncodeRequestBody(request *protocol.RequestHeader, write
 			AdditionalDataGenerator: crypto.GenerateEmptyBytes(),
 		}
 		if request.Option.Has(protocol.RequestOptionAuthenticatedLength) {
-			AuthenticatedLengthKey := jvmessaead.KDF16(c.requestBodyKey[:], "auth_len")
-			AuthenticatedLengthKeyAEAD, err := chacha20poly1305.New(GenerateChacha20Poly1305Key(AuthenticatedLengthKey))
+			AuthenticatedLengthKey := vmessaead.KDF16(c.requestBodyKey[:], "auth_len")
+			AuthenticatedLengthKeyAEAD, err := chacha20poly1305.New(vmessencoding.GenerateChacha20Poly1305Key(AuthenticatedLengthKey))
 			common.Must(err)
 
 			lengthAuth := &crypto.AEADAuthenticator{
@@ -153,7 +155,7 @@ func (c *ClientSession) EncodeRequestBody(request *protocol.RequestHeader, write
 				NonceGenerator:          GenerateChunkNonce(c.requestBodyIV[:], uint32(aead.NonceSize())),
 				AdditionalDataGenerator: crypto.GenerateEmptyBytes(),
 			}
-			sizeParser = NewAEADSizeParser(lengthAuth)
+			sizeParser = vmessencoding.NewAEADSizeParser(lengthAuth)
 		}
 		return crypto.NewAuthenticationWriter(auth, sizeParser, writer, request.Command.TransferType(), padding), nil
 	default:
@@ -162,8 +164,8 @@ func (c *ClientSession) EncodeRequestBody(request *protocol.RequestHeader, write
 }
 
 func (c *ClientSession) DecodeResponseHeader(reader io.Reader) (*protocol.ResponseHeader, error) {
-	aeadResponseHeaderLengthEncryptionKey := jvmessaead.KDF16(c.responseBodyKey[:], jvmessaead.KDFSaltConstAEADRespHeaderLenKey)
-	aeadResponseHeaderLengthEncryptionIV := jvmessaead.KDF(c.responseBodyIV[:], jvmessaead.KDFSaltConstAEADRespHeaderLenIV)[:12]
+	aeadResponseHeaderLengthEncryptionKey := vmessaead.KDF16(c.responseBodyKey[:], vmessaead.KDFSaltConstAEADRespHeaderLenKey)
+	aeadResponseHeaderLengthEncryptionIV := vmessaead.KDF(c.responseBodyIV[:], vmessaead.KDFSaltConstAEADRespHeaderLenIV)[:12]
 
 	aeadResponseHeaderLengthEncryptionAEAD := crypto.NewAesGcm(aeadResponseHeaderLengthEncryptionKey)
 
@@ -184,8 +186,8 @@ func (c *ClientSession) DecodeResponseHeader(reader io.Reader) (*protocol.Respon
 		decryptedResponseHeaderLength = int(decryptedResponseHeaderLengthBinaryDeserializeBuffer)
 	}
 
-	aeadResponseHeaderPayloadEncryptionKey := jvmessaead.KDF16(c.responseBodyKey[:], jvmessaead.KDFSaltConstAEADRespHeaderPayloadKey)
-	aeadResponseHeaderPayloadEncryptionIV := jvmessaead.KDF(c.responseBodyIV[:], jvmessaead.KDFSaltConstAEADRespHeaderPayloadIV)[:12]
+	aeadResponseHeaderPayloadEncryptionKey := vmessaead.KDF16(c.responseBodyKey[:], vmessaead.KDFSaltConstAEADRespHeaderPayloadKey)
+	aeadResponseHeaderPayloadEncryptionIV := vmessaead.KDF(c.responseBodyIV[:], vmessaead.KDFSaltConstAEADRespHeaderPayloadIV)[:12]
 
 	aeadResponseHeaderPayloadEncryptionAEAD := crypto.NewAesGcm(aeadResponseHeaderPayloadEncryptionKey)
 
@@ -227,7 +229,7 @@ func (c *ClientSession) DecodeResponseHeader(reader io.Reader) (*protocol.Respon
 		if _, err := buffer.ReadFullFrom(c.responseReader, dataLen); err != nil {
 			return nil, errors.New("failed to read response command").Base(err)
 		}
-		command, err := UnmarshalCommand(cmdID, buffer.Bytes())
+		command, err := vmessencoding.UnmarshalCommand(cmdID, buffer.Bytes())
 		if err == nil {
 			header.Command = command
 		}
@@ -240,7 +242,7 @@ func (c *ClientSession) DecodeResponseHeader(reader io.Reader) (*protocol.Respon
 func (c *ClientSession) DecodeResponseBody(request *protocol.RequestHeader, reader io.Reader) (buf.Reader, error) {
 	var sizeParser crypto.ChunkSizeDecoder = crypto.PlainChunkSizeParser{}
 	if request.Option.Has(protocol.RequestOptionChunkMasking) {
-		sizeParser = NewShakeSizeParser(c.responseBodyIV[:])
+		sizeParser = vmessencoding.NewShakeSizeParser(c.responseBodyIV[:])
 	}
 	var padding crypto.PaddingLengthGenerator
 	if request.Option.Has(protocol.RequestOptionGlobalPadding) {
@@ -261,7 +263,7 @@ func (c *ClientSession) DecodeResponseBody(request *protocol.RequestHeader, read
 			AdditionalDataGenerator: crypto.GenerateEmptyBytes(),
 		}
 		if request.Option.Has(protocol.RequestOptionAuthenticatedLength) {
-			AuthenticatedLengthKey := jvmessaead.KDF16(c.requestBodyKey[:], "auth_len")
+			AuthenticatedLengthKey := vmessaead.KDF16(c.requestBodyKey[:], "auth_len")
 			AuthenticatedLengthKeyAEAD := crypto.NewAesGcm(AuthenticatedLengthKey)
 
 			lengthAuth := &crypto.AEADAuthenticator{
@@ -269,11 +271,11 @@ func (c *ClientSession) DecodeResponseBody(request *protocol.RequestHeader, read
 				NonceGenerator:          GenerateChunkNonce(c.requestBodyIV[:], uint32(aead.NonceSize())),
 				AdditionalDataGenerator: crypto.GenerateEmptyBytes(),
 			}
-			sizeParser = NewAEADSizeParser(lengthAuth)
+			sizeParser = vmessencoding.NewAEADSizeParser(lengthAuth)
 		}
 		return crypto.NewAuthenticationReader(auth, sizeParser, reader, request.Command.TransferType(), padding), nil
 	case protocol.SecurityType_CHACHA20_POLY1305:
-		aead, _ := chacha20poly1305.New(GenerateChacha20Poly1305Key(c.responseBodyKey[:]))
+		aead, _ := chacha20poly1305.New(vmessencoding.GenerateChacha20Poly1305Key(c.responseBodyKey[:]))
 
 		auth := &crypto.AEADAuthenticator{
 			AEAD:                    aead,
@@ -281,8 +283,8 @@ func (c *ClientSession) DecodeResponseBody(request *protocol.RequestHeader, read
 			AdditionalDataGenerator: crypto.GenerateEmptyBytes(),
 		}
 		if request.Option.Has(protocol.RequestOptionAuthenticatedLength) {
-			AuthenticatedLengthKey := jvmessaead.KDF16(c.requestBodyKey[:], "auth_len")
-			AuthenticatedLengthKeyAEAD, err := chacha20poly1305.New(GenerateChacha20Poly1305Key(AuthenticatedLengthKey))
+			AuthenticatedLengthKey := vmessaead.KDF16(c.requestBodyKey[:], "auth_len")
+			AuthenticatedLengthKeyAEAD, err := chacha20poly1305.New(vmessencoding.GenerateChacha20Poly1305Key(AuthenticatedLengthKey))
 			common.Must(err)
 
 			lengthAuth := &crypto.AEADAuthenticator{
@@ -290,7 +292,7 @@ func (c *ClientSession) DecodeResponseBody(request *protocol.RequestHeader, read
 				NonceGenerator:          GenerateChunkNonce(c.requestBodyIV[:], uint32(aead.NonceSize())),
 				AdditionalDataGenerator: crypto.GenerateEmptyBytes(),
 			}
-			sizeParser = NewAEADSizeParser(lengthAuth)
+			sizeParser = vmessencoding.NewAEADSizeParser(lengthAuth)
 		}
 		return crypto.NewAuthenticationReader(auth, sizeParser, reader, request.Command.TransferType(), padding), nil
 	default:
