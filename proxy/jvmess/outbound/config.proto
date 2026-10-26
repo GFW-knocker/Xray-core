@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package xray.proxy.jvmess.outbound;
+option csharp_namespace = "Xray.Proxy.Jvmess.Outbound";
+option go_package = "github.com/GFW-knocker/Xray-core/proxy/jvmess/outbound";
+option java_package = "com.xray.proxy.jvmess.outbound";
+option java_multiple_files = true;
+
+import "common/protocol/server_spec.proto";
+
+message Config {
+  xray.common.protocol.ServerEndpoint Receiver = 1;
+}
