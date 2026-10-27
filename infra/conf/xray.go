@@ -48,6 +48,7 @@ var (
 		"vless":       func() interface{} { return new(VLessOutboundConfig) },
 		"mvless":      func() interface{} { return new(MVLessOutboundConfig) },
 		"vmess":       func() interface{} { return new(VMessOutboundConfig) },
+		"jvmess":      func() interface{} { return new(JVMessOutboundConfig) },
 		"trojan":      func() interface{} { return new(TrojanClientConfig) },
 		"hysteria":    func() interface{} { return new(HysteriaClientConfig) },
 		"dns":         func() interface{} { return new(DNSOutboundConfig) },
