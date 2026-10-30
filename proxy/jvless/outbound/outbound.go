@@ -14,7 +14,7 @@ import (
 	"github.com/GFW-knocker/Xray-core/transport/internet/stat"
 )
 
-// Version is the request and response version byte. Everything else is VLESS.
+// Version replaces vless's 0 in both the request and the reply. Nothing else changes.
 const Version = byte(0x78)
 
 func init() {
@@ -25,8 +25,8 @@ func init() {
 			if err != nil {
 				return nil, err
 			}
-			// Vision needs the raw TLS conn, encryption sends its handshake first
-			// and reverse dials around the swap, so none of them would speak jvless.
+			// These can't go through the byte swap: Vision needs the raw TLS conn,
+			// encryption writes its handshake first, and reverse dials without our wrapper.
 			if a := a.(*vless.Account); a.Flow != "" || a.Reverse != nil || a.Encryption != "" && a.Encryption != "none" {
 				return nil, errors.New(`jvless doesn't support "flow", "encryption" or "reverse"`)
 			}
@@ -44,7 +44,7 @@ type Handler struct {
 	*vlessoutbound.Handler
 }
 
-// Process implements proxy.Outbound.Process().
+// Process hands vless a dialer whose conns swap the version byte.
 func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer internet.Dialer) error {
 	return h.Handler.Process(ctx, link, swapDialer{dialer})
 }
@@ -61,8 +61,8 @@ func (d swapDialer) Dial(ctx context.Context, dest net.Destination) (stat.Connec
 	return &swapConn{Connection: conn}, nil
 }
 
-// swapConn swaps the first byte each way between the vless version and ours,
-// so a reply with any other version still fails the vless check.
+// swapConn flips the first byte each way between 0 and 0x78. vless still checks
+// the reply version, so any reply other than 0x78 gets rejected.
 type swapConn struct {
 	stat.Connection
 	wrote, read bool
@@ -73,6 +73,7 @@ func (c *swapConn) Write(b []byte) (int, error) {
 		return c.Connection.Write(b)
 	}
 	c.wrote = true
+	// copy instead of editing b, it's the caller's buffer
 	return c.Connection.Write(append([]byte{swap(b[0])}, b[1:]...))
 }
 

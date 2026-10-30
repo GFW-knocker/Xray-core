@@ -6,12 +6,13 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// JVLessOutboundConfig takes the same settings as the vless outbound.
+// JVLessOutboundConfig reads the vless outbound settings. The handler turns down
+// flow, encryption and reverse.
 type JVLessOutboundConfig struct {
 	VLessOutboundConfig
 }
 
-// Build implements Buildable
+// Build reuses the vless builder. The jvless config type is what makes core pick our handler.
 func (c *JVLessOutboundConfig) Build() (proto.Message, error) {
 	m, err := c.VLessOutboundConfig.Build()
 	if err != nil {

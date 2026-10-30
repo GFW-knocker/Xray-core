@@ -74,7 +74,7 @@ func TestJVLessOutbound(t *testing.T) {
 	})
 }
 
-// Only the protocol name changes: settings and transport build the same as VLESS.
+// Same JSON as vless with only the protocol name changed, so everything but the config type should match.
 func TestJVLessOutboundDetour(t *testing.T) {
 	build := func(name, stream string) *core.OutboundHandlerConfig {
 		c := new(OutboundDetourConfig)
