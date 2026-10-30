@@ -36,18 +36,21 @@ func (d pipeDialer) Dial(context.Context, xnet.Destination) (stat.Connection, er
 func (pipeDialer) DestIpAddress() xnet.IP                                { return nil }
 func (pipeDialer) SetOutboundGateway(context.Context, *session.Outbound) {}
 
-func endpoint(id string) *protocol.ServerEndpoint {
+func endpoint(account *vless.Account) *protocol.ServerEndpoint {
 	return &protocol.ServerEndpoint{
 		Address: xnet.NewIPOrDomain(xnet.DomainAddress("server.example.com")),
 		Port:    443,
-		User: &protocol.User{
-			Account: serial.ToTypedMessage(&vless.Account{Id: id, Encryption: "none"}),
-		},
+		User:    &protocol.User{Account: serial.ToTypedMessage(account)},
 	}
 }
 
-func jvlessConfig(id string) proto.Message { return &Config{Vnext: endpoint(id)} }
-func vlessConfig(id string) proto.Message  { return &vlessoutbound.Config{Vnext: endpoint(id)} }
+func jvlessConfig(id string) proto.Message {
+	return &Config{Vnext: endpoint(&vless.Account{Id: id, Encryption: "none"})}
+}
+
+func vlessConfig(id string) proto.Message {
+	return &vlessoutbound.Config{Vnext: endpoint(&vless.Account{Id: id, Encryption: "none"})}
+}
 
 // newHandler goes through the config registry, the same way core builds outbounds.
 func newHandler(t *testing.T, config proto.Message) proxy.Outbound {
@@ -224,5 +227,19 @@ func TestConfigRoundTrip(t *testing.T) {
 
 	if ex := roundTrip(t, newHandler(t, decoded), id, Version); ex.err != nil || ex.sent != 0x78 {
 		t.Fatalf("decoded config: version %#x, err %v", ex.sent, ex.err)
+	}
+}
+
+func TestUnsupportedSettings(t *testing.T) {
+	instance, err := core.New(&core.Config{})
+	common.Must(err)
+	for _, a := range []*vless.Account{
+		{Id: randomID(), Encryption: "none", Flow: vless.XRV},
+		{Id: randomID(), Encryption: "mlkem768x25519plus"},
+		{Id: randomID(), Encryption: "none", Reverse: &vless.Reverse{Tag: "r"}},
+	} {
+		if _, err := core.CreateObject(instance, &Config{Vnext: endpoint(a)}); err == nil {
+			t.Errorf("accepted %v", a)
+		}
 	}
 }

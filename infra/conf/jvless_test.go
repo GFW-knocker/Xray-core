@@ -34,7 +34,6 @@ func TestJVLessOutbound(t *testing.T) {
 				Level: 1,
 				Account: serial.ToTypedMessage(&vless.Account{
 					Id:         "27848739-7e62-4138-9fd3-098a63964b6b",
-					Flow:       "xtls-rprx-vision",
 					Encryption: "none",
 				}),
 			},
@@ -50,7 +49,6 @@ func TestJVLessOutbound(t *testing.T) {
 					"users": [
 						{
 							"id": "27848739-7e62-4138-9fd3-098a63964b6b",
-							"flow": "xtls-rprx-vision",
 							"encryption": "none",
 							"email": "love@example.com",
 							"level": 1
@@ -66,7 +64,6 @@ func TestJVLessOutbound(t *testing.T) {
 				"address": "example.com",
 				"port": 443,
 				"id": "27848739-7e62-4138-9fd3-098a63964b6b",
-				"flow": "xtls-rprx-vision",
 				"encryption": "none",
 				"email": "love@example.com",
 				"level": 1
