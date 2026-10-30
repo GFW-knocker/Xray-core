@@ -51,6 +51,7 @@ var (
 		"socks":       func() interface{} { return new(SocksClientConfig) },
 		"vless":       func() interface{} { return new(VLessOutboundConfig) },
 		"mvless":      func() interface{} { return new(MVLessOutboundConfig) },
+		"jvless":      func() interface{} { return new(JVLessOutboundConfig) },
 		"vmess":       func() interface{} { return new(VMessOutboundConfig) },
 		"jvmess":      func() interface{} { return new(JVMessOutboundConfig) },
 		"trojan":      func() interface{} { return new(TrojanClientConfig) },
