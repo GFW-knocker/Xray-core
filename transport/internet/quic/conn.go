@@ -14,13 +14,25 @@ import (
 	"github.com/apernet/quic-go"
 )
 
+// sysConn applies the transport's header and encryption to every datagram.
+// The socket under it is a plain UDP socket, or whatever the FinalMask built
+// when the stream settings carry one.
 type sysConn struct {
-	conn   *net.UDPConn
+	conn   net.PacketConn
 	header internet.PacketHeader
 	auth   cipher.AEAD
 }
 
-func wrapSysConn(rawConn *net.UDPConn, config *Config) (*sysConn, error) {
+// udpSysConn is a sysConn over a plain UDP socket. It adds the socket methods
+// quic-go looks for (buffer sizes, and SyscallConn for the don't-fragment
+// bit), so that a plain socket is driven exactly as before FinalMask support.
+// A masked socket gets none of them: it may be several sockets, or none.
+type udpSysConn struct {
+	*sysConn
+	udp *net.UDPConn
+}
+
+func wrapSysConn(rawConn net.PacketConn, config *Config) (net.PacketConn, error) {
 	header, err := getHeader(config)
 	if err != nil {
 		return nil, err
@@ -29,11 +41,15 @@ func wrapSysConn(rawConn *net.UDPConn, config *Config) (*sysConn, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &sysConn{
+	c := &sysConn{
 		conn:   rawConn,
 		header: header,
 		auth:   auth,
-	}, nil
+	}
+	if udp, ok := rawConn.(*net.UDPConn); ok {
+		return &udpSysConn{sysConn: c, udp: udp}, nil
+	}
+	return c, nil
 }
 
 var (
@@ -151,14 +167,6 @@ func (c *sysConn) LocalAddr() net.Addr {
 	return c.conn.LocalAddr()
 }
 
-func (c *sysConn) SetReadBuffer(bytes int) error {
-	return c.conn.SetReadBuffer(bytes)
-}
-
-func (c *sysConn) SetWriteBuffer(bytes int) error {
-	return c.conn.SetWriteBuffer(bytes)
-}
-
 func (c *sysConn) SetDeadline(t time.Time) error {
 	return c.conn.SetDeadline(t)
 }
@@ -171,8 +179,16 @@ func (c *sysConn) SetWriteDeadline(t time.Time) error {
 	return c.conn.SetWriteDeadline(t)
 }
 
-func (c *sysConn) SyscallConn() (syscall.RawConn, error) {
-	return c.conn.SyscallConn()
+func (c *udpSysConn) SetReadBuffer(bytes int) error {
+	return c.udp.SetReadBuffer(bytes)
+}
+
+func (c *udpSysConn) SetWriteBuffer(bytes int) error {
+	return c.udp.SetWriteBuffer(bytes)
+}
+
+func (c *udpSysConn) SyscallConn() (syscall.RawConn, error) {
+	return c.udp.SyscallConn()
 }
 
 type interConn struct {

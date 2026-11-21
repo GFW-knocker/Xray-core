@@ -2,6 +2,7 @@ package quic
 
 import (
 	"context"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/GFW-knocker/Xray-core/common/net"
 	"github.com/GFW-knocker/Xray-core/common/task"
 	"github.com/GFW-knocker/Xray-core/transport/internet"
+	"github.com/GFW-knocker/Xray-core/transport/internet/finalmask"
 	"github.com/GFW-knocker/Xray-core/transport/internet/quicdial"
 	"github.com/GFW-knocker/Xray-core/transport/internet/stat"
 	"github.com/GFW-knocker/Xray-core/transport/internet/tls"
@@ -18,7 +20,7 @@ import (
 )
 
 type connectionContext struct {
-	rawConn *sysConn
+	rawConn net.PacketConn
 	// tr owns the goroutines reading and writing rawConn; it is closed together
 	// with rawConn so a dead connection leaves nothing running behind it.
 	tr *quic.Transport
@@ -173,7 +175,7 @@ func (s *clientConnections) openStreamOnExisting(ctx context.Context, d *destCon
 	return nil
 }
 
-func (s *clientConnections) openConnection(ctx context.Context, destAddr net.Addr, config *Config, tlsConfig *tls.Config, sockopt *internet.SocketConfig) (stat.Connection, error) {
+func (s *clientConnections) openConnection(ctx context.Context, destAddr net.Addr, config *Config, tlsConfig *tls.Config, sockopt *internet.SocketConfig, fm *finalmask.FinalMask) (stat.Connection, error) {
 	dest := net.DestinationFromAddr(destAddr)
 	d := s.destination(dest)
 
@@ -200,7 +202,7 @@ func (s *clientConnections) openConnection(ctx context.Context, destAddr net.Add
 	closeConnections(dead)
 
 	errors.LogInfo(ctx, "dialing quic to ", dest)
-	cc, err := dialConnection(ctx, dest, destAddr, config, tlsConfig, sockopt, &d.quicVersion)
+	cc, err := dialConnection(ctx, dest, destAddr, config, tlsConfig, sockopt, fm, &d.quicVersion)
 	if err != nil {
 		return nil, err
 	}
@@ -212,21 +214,28 @@ func (s *clientConnections) openConnection(ctx context.Context, destAddr net.Add
 	return cc.openStream(destAddr)
 }
 
-// dialConnection opens a new QUIC connection to dest on its own socket.
-func dialConnection(ctx context.Context, dest net.Destination, destAddr net.Addr, config *Config, tlsConfig *tls.Config, sockopt *internet.SocketConfig, quicVersion *atomic.Int32) (*connectionContext, error) {
+// dialPacketConn opens the socket a new connection rides on. With a FinalMask
+// in the stream settings the mask dials it (and may, for instance, spread the
+// connection over several local ports); without one it is a plain UDP socket,
+// as it always was.
+func dialPacketConn(ctx context.Context, dest net.Destination, sockopt *internet.SocketConfig, fm *finalmask.FinalMask) (net.PacketConn, error) {
+	if fm != nil {
+		conn, err := fm.DialUDP(ctx, dest)
+		if err != nil {
+			return nil, errors.New("failed to dial to dest: ", err).Base(err)
+		}
+		wrapper, ok := conn.(*net.PacketConnWrapper)
+		if !ok {
+			conn.Close()
+			return nil, errors.New("QUIC: the finalmask returned a ", reflect.TypeOf(conn), ", not a packet conn")
+		}
+		return wrapper.PacketConn, nil
+	}
+
 	rawConn, err := internet.DialSystem(ctx, dest, sockopt)
 	if err != nil {
 		return nil, errors.New("failed to dial to dest: ", err).Base(err)
 	}
-
-	quicConfig := &quic.Config{
-		KeepAlivePeriod:      0,
-		HandshakeIdleTimeout: 8 * time.Second,
-		MaxIdleTimeout:       300 * time.Second,
-	}
-	// Versions is set per attempt by quicdial.Dial below, which prefers v2 and
-	// falls back to v1.
-
 	var udpConn *net.UDPConn
 	switch conn := rawConn.(type) {
 	case *net.UDPConn:
@@ -239,10 +248,27 @@ func dialConnection(ctx context.Context, dest net.Destination, destAddr net.Addr
 		rawConn.Close()
 		return nil, errors.New("QUIC with sockopt is unsupported")
 	}
+	return udpConn, nil
+}
 
-	sysConn, err := wrapSysConn(udpConn, config)
+// dialConnection opens a new QUIC connection to dest on its own socket.
+func dialConnection(ctx context.Context, dest net.Destination, destAddr net.Addr, config *Config, tlsConfig *tls.Config, sockopt *internet.SocketConfig, fm *finalmask.FinalMask, quicVersion *atomic.Int32) (*connectionContext, error) {
+	pktConn, err := dialPacketConn(ctx, dest, sockopt, fm)
 	if err != nil {
-		rawConn.Close()
+		return nil, err
+	}
+
+	quicConfig := &quic.Config{
+		KeepAlivePeriod:      0,
+		HandshakeIdleTimeout: 8 * time.Second,
+		MaxIdleTimeout:       300 * time.Second,
+	}
+	// Versions is set per attempt by quicdial.Dial below, which prefers v2 and
+	// falls back to v1.
+
+	sysConn, err := wrapSysConn(pktConn, config)
+	if err != nil {
+		pktConn.Close()
 		return nil, err
 	}
 	tr := &quic.Transport{
@@ -319,7 +345,7 @@ func Dial(ctx context.Context, dest net.Destination, streamSettings *internet.Me
 
 	config := streamSettings.ProtocolSettings.(*Config)
 
-	return client.openConnection(ctx, destAddr, config, tlsConfig, streamSettings.SocketSettings)
+	return client.openConnection(ctx, destAddr, config, tlsConfig, streamSettings.SocketSettings, streamSettings.FinalMask)
 }
 
 func init() {

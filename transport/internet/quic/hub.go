@@ -16,7 +16,7 @@ import (
 
 // Listener is an internet.Listener that listens for TCP connections.
 type Listener struct {
-	rawConn  *sysConn
+	rawConn  net.PacketConn
 	tr       *quic.Transport
 	listener *quic.Listener
 	done     *done.Instance
@@ -102,10 +102,19 @@ func Listen(ctx context.Context, address net.Address, port net.Port, streamSetti
 	}
 
 	config := streamSettings.ProtocolSettings.(*Config)
-	rawConn, err := internet.ListenSystemPacket(context.Background(), &net.UDPAddr{
+	listenAddr := &net.UDPAddr{
 		IP:   address.IP(),
 		Port: int(port),
-	}, streamSettings.SocketSettings)
+	}
+	var rawConn net.PacketConn
+	var err error
+	if streamSettings.FinalMask != nil {
+		// the masks wrap the socket, so the transport's own header and
+		// encryption still go on first and the masks act on what goes out
+		rawConn, err = streamSettings.FinalMask.ListenPacket(context.Background(), listenAddr)
+	} else {
+		rawConn, err = internet.ListenSystemPacket(context.Background(), listenAddr, streamSettings.SocketSettings)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -118,12 +127,16 @@ func Listen(ctx context.Context, address net.Address, port net.Port, streamSetti
 		MaxIncomingUniStreams: -1,
 	}
 
-	udpConn, ok := rawConn.(*net.UDPConn)
-	if !ok {
-		rawConn.Close()
-		return nil, errors.New("QUIC with sockopt is unsupported")
+	pktConn := rawConn
+	if streamSettings.FinalMask == nil {
+		udpConn, ok := rawConn.(*net.UDPConn)
+		if !ok {
+			rawConn.Close()
+			return nil, errors.New("QUIC with sockopt is unsupported")
+		}
+		pktConn = udpConn
 	}
-	conn, err := wrapSysConn(udpConn, config)
+	conn, err := wrapSysConn(pktConn, config)
 	if err != nil {
 		// conn is nil here
 		rawConn.Close()
