@@ -5,6 +5,7 @@ import (
 	"reflect"
 
 	"github.com/GFW-knocker/Xray-core/common"
+	"github.com/GFW-knocker/Xray-core/common/errors"
 	"github.com/GFW-knocker/Xray-core/common/net"
 	"github.com/GFW-knocker/Xray-core/common/net/cnc"
 	"github.com/GFW-knocker/Xray-core/transport/internet/finalmask"
@@ -88,7 +89,8 @@ func ToMemoryStreamConfig(s *StreamConfig) (*MemoryStreamConfig, error) {
 				newConn = &FakePacketConn{Conn: c}
 				udpAddr = &net.UDPAddr{IP: []byte{0, 0, 0, 0}, Port: 0}
 			default:
-				panic(reflect.TypeOf(c))
+				conn.Close()
+				return nil, nil, errors.New("finalmask: the system dialer returned a ", reflect.TypeOf(c), ", not a packet conn")
 			}
 			return newConn, udpAddr, nil
 		}

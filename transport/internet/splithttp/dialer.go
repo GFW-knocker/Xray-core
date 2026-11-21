@@ -224,7 +224,8 @@ func createHTTPClient(dest net.Destination, streamSettings *internet.MemoryStrea
 						pktConn = &internet.FakePacketConn{Conn: c}
 						udpAddr = &net.UDPAddr{IP: []byte{0, 0, 0, 0}}
 					default:
-						panic(reflect.TypeOf(c))
+						conn.Close()
+						return nil, errors.New("XHTTP: the system dialer returned a ", reflect.TypeOf(c), ", which cannot carry QUIC")
 					}
 				}
 
@@ -244,15 +245,10 @@ func createHTTPClient(dest net.Destination, streamSettings *internet.MemoryStrea
 				}
 				context.AfterFunc(conn.Context(), func() { tr.Close(); pktConn.Close() })
 
-				switch quicParams.Congestion {
-				case "reno":
-				case "", "bbr":
-					congestion.UseBBR(conn, bbr.Profile(quicParams.BbrProfile))
-				case "force-brutal":
-					congestion.UseBrutal(conn, quicParams.BrutalUp, quicParams.BrutalDisableLossCompensation)
-				default:
-					panic(quicParams.Congestion)
-				}
+				// XHTTP has no rate exchange, so "brutal" has no peer rate and
+				// runs BBR; "force-brutal" sends at brutalUp.
+				congestion.UseNamed(conn, quicParams.Congestion, congestion.TypeBBR, quicParams.BbrProfile,
+					quicParams.BrutalUp, 0, quicParams.BrutalDisableLossCompensation)
 
 				return conn, nil
 			},

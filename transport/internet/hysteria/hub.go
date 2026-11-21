@@ -71,21 +71,10 @@ func (h *httpHandler) AuthHTTP(w http.ResponseWriter, r *http.Request) bool {
 
 			conn := h.conn
 			quicParams := h.quicParams
-			switch quicParams.Congestion {
-			case "reno":
-			case "bbr":
-				congestion.UseBBR(conn, bbr.Profile(quicParams.BbrProfile))
-			case "", "brutal":
-				if quicParams.BrutalUp == 0 || down == 0 {
-					congestion.UseBBR(conn, bbr.Profile(quicParams.BbrProfile))
-				} else {
-					congestion.UseBrutal(conn, min(quicParams.BrutalUp, down), quicParams.BrutalDisableLossCompensation)
-				}
-			case "force-brutal":
-				congestion.UseBrutal(conn, quicParams.BrutalUp, quicParams.BrutalDisableLossCompensation)
-			default:
-				panic(quicParams.Congestion)
-			}
+			// "" is adaptive Brutal at the rate the client announced (down),
+			// BBR when either rate is unknown
+			congestion.UseNamed(conn, quicParams.Congestion, congestion.TypeBrutal, quicParams.BbrProfile,
+				quicParams.BrutalUp, down, quicParams.BrutalDisableLossCompensation)
 
 			if h.validator != nil {
 				udpSM := &udpSessionManager{

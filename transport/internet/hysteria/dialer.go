@@ -149,7 +149,8 @@ func (c *client) dial(ctx context.Context) error {
 			pktConn = &internet.FakePacketConn{Conn: c}
 			udpAddr = &net.UDPAddr{IP: []byte{0, 0, 0, 0}}
 		default:
-			panic(reflect.TypeOf(c))
+			conn.Close()
+			return errors.New("hysteria: the system dialer returned a ", reflect.TypeOf(c), ", which cannot carry QUIC")
 		}
 	}
 
@@ -213,21 +214,10 @@ func (c *client) dial(ctx context.Context) error {
 	down, _ := strconv.ParseUint(resp.Header.Get(CommonHeaderCCRX), 10, 64)
 	errors.LogDebug(context.Background(), "ECHAccepted ", conn.ConnectionState().TLS.ECHAccepted)
 
-	switch quicParams.Congestion {
-	case "reno":
-	case "bbr":
-		congestion.UseBBR(conn, bbr.Profile(quicParams.BbrProfile))
-	case "", "brutal":
-		if quicParams.BrutalUp == 0 || down == 0 {
-			congestion.UseBBR(conn, bbr.Profile(quicParams.BbrProfile))
-		} else {
-			congestion.UseBrutal(conn, min(quicParams.BrutalUp, down), quicParams.BrutalDisableLossCompensation)
-		}
-	case "force-brutal":
-		congestion.UseBrutal(conn, quicParams.BrutalUp, quicParams.BrutalDisableLossCompensation)
-	default:
-		panic(quicParams.Congestion)
-	}
+	// "" is adaptive Brutal at the rate the server announced (down), BBR when
+	// either rate is unknown
+	congestion.UseNamed(conn, quicParams.Congestion, congestion.TypeBrutal, quicParams.BbrProfile,
+		quicParams.BrutalUp, down, quicParams.BrutalDisableLossCompensation)
 
 	c.pktConn = pktConn
 	c.tr = tr

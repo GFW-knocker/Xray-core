@@ -618,14 +618,9 @@ func (l *QListener) Accept(ctx context.Context) (*quic.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	switch l.quicParams.Congestion {
-	case "reno":
-	case "", "bbr":
-		congestion.UseBBR(conn, bbr.Profile(l.quicParams.BbrProfile))
-	case "force-brutal":
-		congestion.UseBrutal(conn, l.quicParams.BrutalUp, l.quicParams.BrutalDisableLossCompensation)
-	default:
-		panic(l.quicParams.Congestion)
-	}
+	// XHTTP has no rate exchange, so "brutal" has no peer rate and runs BBR;
+	// "force-brutal" sends at brutalUp.
+	congestion.UseNamed(conn, l.quicParams.Congestion, congestion.TypeBBR, l.quicParams.BbrProfile,
+		l.quicParams.BrutalUp, 0, l.quicParams.BrutalDisableLossCompensation)
 	return conn, nil
 }

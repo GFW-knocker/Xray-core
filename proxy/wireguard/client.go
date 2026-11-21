@@ -291,7 +291,8 @@ func NewClient(ctx context.Context, conf *DeviceConfig) (*Handler, error) {
 			case *cnc.Connection:
 				pktConn = &internet.FakePacketConn{Conn: c}
 			default:
-				panic(reflect.TypeOf(c))
+				conn.Close()
+				return nil, errors.New("the system dialer returned a ", reflect.TypeOf(c), ", which cannot carry WireGuard")
 			}
 		}
 		if uplinkCounter != nil || downlinkCounter != nil {

@@ -17,7 +17,6 @@ import (
 	"github.com/GFW-knocker/Xray-core/transport/internet"
 	"github.com/GFW-knocker/Xray-core/transport/internet/finalmask"
 	"github.com/GFW-knocker/Xray-core/transport/internet/hysteria/congestion"
-	"github.com/GFW-knocker/Xray-core/transport/internet/hysteria/congestion/bbr"
 	"github.com/GFW-knocker/Xray-core/transport/internet/tls"
 	"github.com/apernet/quic-go"
 	"github.com/apernet/quic-go/http3"
@@ -87,15 +86,10 @@ func NewDOHResolver(config *ResolverProto, dialer *finalmask.Dialer) (Resolver, 
 					return nil, err
 				}
 				context.AfterFunc(qc.Context(), func() { tr.Close(); conn.Close() })
-				switch quicParams.Congestion {
-				case "", "reno":
-				case "bbr":
-					congestion.UseBBR(qc, bbr.Profile(quicParams.BbrProfile))
-				case "force-brutal":
-					congestion.UseBrutal(qc, quicParams.BrutalUp, quicParams.BrutalDisableLossCompensation)
-				default:
-					panic(quicParams.Congestion)
-				}
+				// "" stays reno here; DNS has no rate exchange, so "brutal"
+				// has no peer rate and runs BBR.
+				congestion.UseNamed(qc, quicParams.Congestion, congestion.TypeReno, quicParams.BbrProfile,
+					quicParams.BrutalUp, 0, quicParams.BrutalDisableLossCompensation)
 				return qc, nil
 			},
 		}
@@ -169,7 +163,9 @@ func (r *DOHResolver) setaddr(addr net.Addr) {
 	case *net.UDPAddr:
 		r.udpAddr = v
 	default:
-		panic(v)
+		// a dialer may report an address of another kind (a chained
+		// outbound, say): keep the previous one rather than crash
+		errors.LogDebug(context.Background(), "xdns: unexpected resolver address ", v)
 	}
 }
 
