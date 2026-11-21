@@ -22,14 +22,19 @@ const (
 )
 
 type Config struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Local         bool                   `protobuf:"varint,2,opt,name=local,proto3" json:"local,omitempty"`
-	Remote        bool                   `protobuf:"varint,3,opt,name=remote,proto3" json:"remote,omitempty"`
-	RemoteOnce    bool                   `protobuf:"varint,4,opt,name=remote_once,json=remoteOnce,proto3" json:"remote_once,omitempty"`
-	IntervalMin   int64                  `protobuf:"varint,5,opt,name=interval_min,json=intervalMin,proto3" json:"interval_min,omitempty"`
-	IntervalMax   int64                  `protobuf:"varint,6,opt,name=interval_max,json=intervalMax,proto3" json:"interval_max,omitempty"`
-	RemoteIPs     []string               `protobuf:"bytes,7,rep,name=remoteIPs,proto3" json:"remoteIPs,omitempty"`
-	RemotePorts   []uint32               `protobuf:"varint,8,rep,packed,name=remote_ports,json=remotePorts,proto3" json:"remote_ports,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Local       bool                   `protobuf:"varint,2,opt,name=local,proto3" json:"local,omitempty"`
+	Remote      bool                   `protobuf:"varint,3,opt,name=remote,proto3" json:"remote,omitempty"`
+	RemoteOnce  bool                   `protobuf:"varint,4,opt,name=remote_once,json=remoteOnce,proto3" json:"remote_once,omitempty"`
+	IntervalMin int64                  `protobuf:"varint,5,opt,name=interval_min,json=intervalMin,proto3" json:"interval_min,omitempty"`
+	IntervalMax int64                  `protobuf:"varint,6,opt,name=interval_max,json=intervalMax,proto3" json:"interval_max,omitempty"`
+	RemoteIPs   []string               `protobuf:"bytes,7,rep,name=remoteIPs,proto3" json:"remoteIPs,omitempty"`
+	RemotePorts []uint32               `protobuf:"varint,8,rep,packed,name=remote_ports,json=remotePorts,proto3" json:"remote_ports,omitempty"`
+	// packet_local sends from a fresh local port every packets_min..packets_max
+	// datagrams, while still receiving on the earlier ports.
+	PacketLocal   bool  `protobuf:"varint,9,opt,name=packet_local,json=packetLocal,proto3" json:"packet_local,omitempty"`
+	PacketsMin    int64 `protobuf:"varint,10,opt,name=packets_min,json=packetsMin,proto3" json:"packets_min,omitempty"`
+	PacketsMax    int64 `protobuf:"varint,11,opt,name=packets_max,json=packetsMax,proto3" json:"packets_max,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -113,11 +118,32 @@ func (x *Config) GetRemotePorts() []uint32 {
 	return nil
 }
 
+func (x *Config) GetPacketLocal() bool {
+	if x != nil {
+		return x.PacketLocal
+	}
+	return false
+}
+
+func (x *Config) GetPacketsMin() int64 {
+	if x != nil {
+		return x.PacketsMin
+	}
+	return 0
+}
+
+func (x *Config) GetPacketsMax() int64 {
+	if x != nil {
+		return x.PacketsMax
+	}
+	return 0
+}
+
 var File_transport_internet_finalmask_udphop_config_proto protoreflect.FileDescriptor
 
 const file_transport_internet_finalmask_udphop_config_proto_rawDesc = "" +
 	"\n" +
-	"0transport/internet/finalmask/udphop/config.proto\x12(xray.transport.internet.finalmask.udphop\"\xe4\x01\n" +
+	"0transport/internet/finalmask/udphop/config.proto\x12(xray.transport.internet.finalmask.udphop\"\xc9\x02\n" +
 	"\x06Config\x12\x14\n" +
 	"\x05local\x18\x02 \x01(\bR\x05local\x12\x16\n" +
 	"\x06remote\x18\x03 \x01(\bR\x06remote\x12\x1f\n" +
@@ -126,7 +152,13 @@ const file_transport_internet_finalmask_udphop_config_proto_rawDesc = "" +
 	"\finterval_min\x18\x05 \x01(\x03R\vintervalMin\x12!\n" +
 	"\finterval_max\x18\x06 \x01(\x03R\vintervalMax\x12\x1c\n" +
 	"\tremoteIPs\x18\a \x03(\tR\tremoteIPs\x12!\n" +
-	"\fremote_ports\x18\b \x03(\rR\vremotePortsJ\x04\b\x01\x10\x02B\xa1\x01\n" +
+	"\fremote_ports\x18\b \x03(\rR\vremotePorts\x12!\n" +
+	"\fpacket_local\x18\t \x01(\bR\vpacketLocal\x12\x1f\n" +
+	"\vpackets_min\x18\n" +
+	" \x01(\x03R\n" +
+	"packetsMin\x12\x1f\n" +
+	"\vpackets_max\x18\v \x01(\x03R\n" +
+	"packetsMaxJ\x04\b\x01\x10\x02B\xa1\x01\n" +
 	",com.xray.transport.internet.finalmask.udphopP\x01ZDgithub.com/GFW-knocker/Xray-core/transport/internet/finalmask/udphop\xaa\x02(Xray.Transport.Internet.Finalmask.Udphopb\x06proto3"
 
 var (

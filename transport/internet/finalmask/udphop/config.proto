@@ -15,5 +15,10 @@ message Config {
   int64 interval_max = 6;
   repeated string remoteIPs = 7;
   repeated uint32 remote_ports = 8;
+  // packet_local sends from a fresh local port every packets_min..packets_max
+  // datagrams, while still receiving on the earlier ports.
+  bool packet_local = 9;
+  int64 packets_min = 10;
+  int64 packets_max = 11;
 }
 

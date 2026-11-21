@@ -1165,12 +1165,13 @@ func (c *Realm) Build() (proto.Message, error) {
 type UDPHop struct {
 	Mode        string     `json:"mode"`
 	Interval    Int32Range `json:"interval"`
+	Packets     Int32Range `json:"packets"`
 	RemoteIPs   []string   `json:"remoteIPs"`
 	RemotePorts PortList   `json:"remotePorts"`
 }
 
 func (c *UDPHop) Build() (proto.Message, error) {
-	var local, remote, remoteOnce bool
+	var local, remote, remoteOnce, packetLocal bool
 	for _, mode := range strings.Split(c.Mode, ",") {
 		switch strings.ToLower(mode) {
 		case "intervallocal":
@@ -1179,9 +1180,27 @@ func (c *UDPHop) Build() (proto.Message, error) {
 			remote = true
 		case "perconnremote":
 			remoteOnce = true
+		case "packetlocal":
+			packetLocal = true
 		default:
 			return nil, errors.New("invalid mode ", mode)
 		}
+	}
+	if local && packetLocal {
+		return nil, errors.New("packetLocal and intervalLocal cannot be combined")
+	}
+	packets := c.Packets
+	if packetLocal {
+		// Default from measurements behind a firewall that cuts a 5-tuple's
+		// upstream after ~12-17 datagrams: 4-8 per port worked, 12 did not.
+		if packets.From == 0 && packets.To == 0 {
+			packets.From, packets.To = 6, 10
+		}
+		if packets.From < 1 || packets.To < packets.From {
+			return nil, errors.New("invalid packets ", packets.From, "-", packets.To)
+		}
+	} else if packets.From != 0 || packets.To != 0 {
+		return nil, errors.New("packets is only used by mode packetLocal")
 	}
 	var remoteIPs []string
 	for _, ip := range c.RemoteIPs {
@@ -1212,6 +1231,9 @@ func (c *UDPHop) Build() (proto.Message, error) {
 		IntervalMax: int64(interval.To),
 		RemoteIPs:   remoteIPs,
 		RemotePorts: c.RemotePorts.Build().Ports(),
+		PacketLocal: packetLocal,
+		PacketsMin:  int64(packets.From),
+		PacketsMax:  int64(packets.To),
 	}, nil
 }
 
