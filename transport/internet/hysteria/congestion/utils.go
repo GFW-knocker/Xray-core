@@ -60,7 +60,15 @@ func seedPacketSize(quicSize, byAddr congestion.ByteCount) congestion.ByteCount 
 	return min(quicSize, byAddr)
 }
 
+// UseBrutal sends at tx bytes/s. A tx of 0 runs BBR instead: Brutal's pacer
+// divides by its rate once the initial burst is spent, so a zero rate would
+// panic with an integer divide by zero and take the process down.
 func UseBrutal(conn *quic.Conn, tx uint64, disableLossCompensation bool) {
+	if tx == 0 {
+		errors.LogWarning(context.Background(), "Brutal with a send rate of 0, using BBR")
+		UseBBR(conn, bbr.ProfileStandard)
+		return
+	}
 	conn.SetCongestionControl(brutal.NewBrutalSender(tx, disableLossCompensation))
 }
 
@@ -82,8 +90,9 @@ const (
 //     peer announced. Only hysteria announces one; everywhere else peerRx is 0,
 //     and "brutal" falls back to BBR exactly as hysteria does when either rate
 //     is unknown. "force-brutal" is the way to send at brutalUp regardless.
-//   - "force-brutal" with no brutalUp would pace at zero and stall the
-//     connection for good, so it falls back to BBR as well.
+//   - "force-brutal" with no brutalUp would give Brutal a rate of 0, which
+//     panics in its pacer (integer divide by zero) once the first burst is
+//     sent, so it falls back to BBR as well.
 func UseNamed(conn *quic.Conn, name, empty, bbrProfile string, brutalUp, peerRx uint64, disableLossCompensation bool) {
 	if name == "" {
 		name = empty

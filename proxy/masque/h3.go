@@ -322,12 +322,13 @@ func (h *Handler) dialH3(ctx context.Context) (*h3Tunnel, error) {
 	tunnel := &h3Tunnel{conn: conn, quicTr: quicTr, pktConn: pktConn}
 
 	switch params.Congestion {
-	case "reno":
-	case "", "bbr":
-		congestion.UseBBR(conn, bbr.Profile(params.BbrProfile))
-	case "force-brutal":
-		congestion.UseBrutal(conn, params.BrutalUp, params.BrutalDisableLossCompensation)
+	case "", congestion.TypeReno, congestion.TypeBBR, congestion.TypeForceBrutal:
+		// UseNamed also covers "force-brutal" without a brutalUp, which would
+		// otherwise give Brutal a rate of 0 and panic in its pacer.
+		congestion.UseNamed(conn, params.Congestion, congestion.TypeBBR, params.BbrProfile,
+			params.BrutalUp, 0, params.BrutalDisableLossCompensation)
 	default:
+		// "brutal" too: the edge announces no receive rate to adapt to.
 		tunnel.Close()
 		return nil, errors.New("masque: unknown congestion control ", params.Congestion)
 	}
