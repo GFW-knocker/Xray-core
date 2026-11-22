@@ -1,9 +1,10 @@
 name: Tests and Checkings
 
+# Manual only: run it from the Actions tab ("Run workflow"), or run "CI",
+# which runs this and both release builds together.
 on:
-  push:
-  pull_request:
-    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+  workflow_call:
 
 # Pinned: gofumpt adds rules between releases, and @latest would turn any such
 # release into a spontaneous CI failure on unrelated PRs. Bump deliberately.

@@ -1,0 +1,28 @@
+name: CI
+
+# Runs every check and build that used to run on each push: "Tests and
+# Checkings" plus both release builds (no upload; that only happens on a
+# published release). Start it from the Actions tab: CI -> Run workflow, and
+# pick the branch. The results show as checks on that branch's latest commit.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write # the build jobs ask for it (uploads are skipped here)
+  actions: write # check-assets may start the assets-update workflow
+
+jobs:
+  tests:
+    name: Tests and Checkings
+    uses: ./.github/workflows/test.yml
+    secrets: inherit
+
+  release:
+    name: Release
+    uses: ./.github/workflows/release.yml
+    secrets: inherit
+
+  release-win7:
+    name: Release Win7
+    uses: ./.github/workflows/release-win7.yml
+    secrets: inherit

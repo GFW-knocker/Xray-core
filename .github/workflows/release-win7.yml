@@ -2,11 +2,9 @@ name: Build and Release for Windows 7
 
 on:
   workflow_dispatch:
+  workflow_call:
   release:
     types: [published]
-  push:
-  pull_request:
-    types: [opened, synchronize, reopened]
 
 jobs:
   check-assets:
