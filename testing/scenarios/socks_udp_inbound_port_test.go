@@ -83,8 +83,8 @@ func startSocksUDPServer(t *testing.T, config *socks.ServerConfig) (net.Port, fu
 			},
 			Outbound: []*core.OutboundHandlerConfig{
 				{
-					// the echo server is on 127.0.0.1, which freedom's default finalRules block
-					ProxySettings: serial.ToTypedMessage(&freedom.Config{FinalRules: []*freedom.FinalRuleConfig{{Action: freedom.RuleAction_Allow}}}),
+					// the echo server is on 127.0.0.1, which freedom's default firewall blocks
+					ProxySettings: serial.ToTypedMessage(&freedom.Config{Firewall: []*freedom.FirewallConfig{{Action: freedom.RuleAction_Allow}}}),
 				},
 			},
 		})

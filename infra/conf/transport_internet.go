@@ -114,6 +114,7 @@ func (c *StreamConfig) Build() (*internet.StreamConfig, error) {
 		return nil, errors.New(`"hytcpSettings" needs "network": "hytcp"`)
 	}
 
+	var xdriveH3 bool
 	switch strings.ToLower(c.Security) {
 	case "", "none":
 	case "tls":
@@ -128,6 +129,7 @@ func (c *StreamConfig) Build() (*internet.StreamConfig, error) {
 		tm := serial.ToTypedMessage(ts)
 		config.SecuritySettings = append(config.SecuritySettings, tm)
 		config.SecurityType = tm.Type
+		xdriveH3 = config.ProtocolName == "xdrive" && tlsSettings.ALPN != nil && slices.Equal(*tlsSettings.ALPN, StringList{"h3"})
 		if config.ProtocolName == "xdrive" && tlsSettings.ALPN != nil && slices.Equal(*tlsSettings.ALPN, StringList{"http/1.1"}) && tlsSettings.ECHConfigList == "" {
 			// a fingerprint puts its own ALPN into the hello, except Go TLS and the
 			// randomized ones, which take it from the config or send none
@@ -291,6 +293,7 @@ func (c *StreamConfig) Build() (*internet.StreamConfig, error) {
 		})
 	}
 	if c.XDRIVESettings != nil {
+		c.XDRIVESettings.h3 = xdriveH3
 		xs, err := c.XDRIVESettings.Build()
 		if err != nil {
 			return nil, errors.New("Failed to build XDRIVE config.").Base(err)
@@ -359,6 +362,21 @@ func (c *StreamConfig) Build() (*internet.StreamConfig, error) {
 			config.QuicParams = &internet.QuicParams{Congestion: "bbr", BbrProfile: "standard"}
 		} else if config.QuicParams.Congestion == "" {
 			config.QuicParams.Congestion = "bbr"
+		}
+	}
+
+	if xdriveH3 && c.FinalMask != nil {
+		if c.XDRIVESettings != nil && c.XDRIVESettings.Service == "google-drive" {
+			// noise only sends datagrams of its own ahead of the QUIC ones, the
+			// other masks change those or need a peer that undoes them
+			for _, mask := range c.FinalMask.Udp {
+				if strings.ToLower(mask.Type) != "noise" {
+					return nil, errors.New(`XDRIVE: over h3 to Google Drive the only "udp" mask that works is "noise", not "`, mask.Type, `"`)
+				}
+			}
+		}
+		if config.QuicParams != nil && (config.QuicParams.Congestion == "brutal" || config.QuicParams.Congestion == "force-brutal") {
+			return nil, errors.New(`XDRIVE: brutal is for Hysteria servers, over h3 "congestion" is "bbr" or "reno", not "`, config.QuicParams.Congestion, `"`)
 		}
 	}
 

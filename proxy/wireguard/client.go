@@ -455,13 +455,14 @@ func (h *Handler) up(ctx context.Context) error {
 // GFW-knocker: resolve the WireGuard endpoint with the OS resolver rather than
 // Xray's DNS. Routing this lookup through Xray DNS deadlocks when two WireGuard
 // outbounds are chained, because resolving the outer endpoint would have to
-// traverse the inner tunnel. d is kept for the upstream signature.
-func MakeResolveLocal(d dns.Client, streamSettings *internet.MemoryStreamConfig) func(host string) (net.IP, error) {
-	return func(host string) (net.IP, error) {
+// traverse the inner tunnel. d is kept for the upstream signature. ctx is the
+// connection's, so the lookup gives up at its deadline (upstream #7323).
+func MakeResolveLocal(d dns.Client, streamSettings *internet.MemoryStreamConfig) func(ctx context.Context, host string) (net.IP, error) {
+	return func(ctx context.Context, host string) (net.IP, error) {
 		if ip := net.ParseIP(host); ip != nil {
 			return ip, nil
 		}
-		ips, err := net.LookupIP(host)
+		ips, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
 		if err != nil {
 			return nil, err
 		}

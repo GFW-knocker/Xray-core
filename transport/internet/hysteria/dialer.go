@@ -211,13 +211,28 @@ func (c *client) dial(ctx context.Context) error {
 	}
 
 	// udp, _ := strconv.ParseBool(resp.Header.Get(ResponseHeaderUDPEnabled))
-	down, _ := strconv.ParseUint(resp.Header.Get(CommonHeaderCCRX), 10, 64)
+	remote_rx, _ := strconv.ParseUint(resp.Header.Get(CommonHeaderCCRX), 10, 64)
+	tx := quicParams.BrutalUp
 	errors.LogDebug(context.Background(), "ECHAccepted ", conn.ConnectionState().TLS.ECHAccepted)
 
-	// "" is adaptive Brutal at the rate the server announced (down), BBR when
-	// either rate is unknown
-	congestion.UseNamed(conn, quicParams.Congestion, congestion.TypeBrutal, quicParams.BbrProfile,
-		quicParams.BrutalUp, down, quicParams.BrutalDisableLossCompensation)
+	switch quicParams.Congestion {
+	case "", congestion.TypeBrutal:
+		// Adaptive Brutal (upstream #7356): send at our own brutalUp, capped by
+		// the receive rate the server announced; BBR without a brutalUp.
+		if tx == 0 {
+			congestion.UseBBR(conn, bbr.Profile(quicParams.BbrProfile))
+		} else {
+			if remote_rx > 0 {
+				tx = min(tx, remote_rx)
+			}
+			congestion.UseBrutal(conn, tx, quicParams.BrutalDisableLossCompensation)
+		}
+	default:
+		// "reno", "bbr", "force-brutal"; UseNamed also keeps an unknown name or
+		// a force-brutal without brutalUp from panicking
+		congestion.UseNamed(conn, quicParams.Congestion, congestion.TypeBrutal, quicParams.BbrProfile,
+			quicParams.BrutalUp, remote_rx, quicParams.BrutalDisableLossCompensation)
+	}
 
 	c.pktConn = pktConn
 	c.tr = tr

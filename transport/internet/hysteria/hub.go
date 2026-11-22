@@ -55,7 +55,8 @@ func (h *httpHandler) AuthHTTP(w http.ResponseWriter, r *http.Request) bool {
 		}
 
 		auth := r.Header.Get(RequestHeaderAuth)
-		down, _ := strconv.ParseUint(r.Header.Get(CommonHeaderCCRX), 10, 64)
+		remote_rx, _ := strconv.ParseUint(r.Header.Get(CommonHeaderCCRX), 10, 64)
+		tx := h.quicParams.BrutalUp
 
 		var user *protocol.MemoryUser
 		var ok bool
@@ -71,10 +72,25 @@ func (h *httpHandler) AuthHTTP(w http.ResponseWriter, r *http.Request) bool {
 
 			conn := h.conn
 			quicParams := h.quicParams
-			// "" is adaptive Brutal at the rate the client announced (down),
-			// BBR when either rate is unknown
-			congestion.UseNamed(conn, quicParams.Congestion, congestion.TypeBrutal, quicParams.BbrProfile,
-				quicParams.BrutalUp, down, quicParams.BrutalDisableLossCompensation)
+			switch quicParams.Congestion {
+			case "", congestion.TypeBrutal:
+				// Adaptive Brutal (upstream #7356): send at the receive rate
+				// the client announced, capped by our own brutalUp; BBR when
+				// the client announced none.
+				if remote_rx == 0 {
+					congestion.UseBBR(conn, bbr.Profile(quicParams.BbrProfile))
+				} else {
+					if tx > 0 {
+						remote_rx = min(remote_rx, tx)
+					}
+					congestion.UseBrutal(conn, remote_rx, quicParams.BrutalDisableLossCompensation)
+				}
+			default:
+				// "reno", "bbr", "force-brutal"; UseNamed also keeps an unknown
+				// name or a force-brutal without brutalUp from panicking
+				congestion.UseNamed(conn, quicParams.Congestion, congestion.TypeBrutal, quicParams.BbrProfile,
+					quicParams.BrutalUp, remote_rx, quicParams.BrutalDisableLossCompensation)
+			}
 
 			if h.validator != nil {
 				udpSM := &udpSessionManager{

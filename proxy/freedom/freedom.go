@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"io"
 	"math/big"
+	"net/http"
 	"regexp"
 	"strings"
 	"sync"
@@ -17,6 +18,7 @@ import (
 	"github.com/GFW-knocker/Xray-core/common/dice"
 	"github.com/GFW-knocker/Xray-core/common/errors"
 	"github.com/GFW-knocker/Xray-core/common/geodata"
+	"github.com/GFW-knocker/Xray-core/common/log"
 	"github.com/GFW-knocker/Xray-core/common/net"
 	"github.com/GFW-knocker/Xray-core/common/platform"
 	"github.com/GFW-knocker/Xray-core/common/retry"
@@ -31,15 +33,24 @@ import (
 	"github.com/GFW-knocker/Xray-core/transport"
 	"github.com/GFW-knocker/Xray-core/transport/internet"
 	"github.com/GFW-knocker/Xray-core/transport/internet/stat"
-	"github.com/pires/go-proxyproto"
 )
 
 var (
 	useSplice               atomic.Bool
 	allNetworks             [8]bool
-	defaultBlockPrivateRule *FinalRule
-	defaultBlockAllRule     *FinalRule
+	defaultBlockPrivateRule *Firewall
+	defaultBlockAllRule     *Firewall
 )
+
+var http403response = http.Response{
+	StatusCode: 403,
+	ProtoMajor: 1,
+	ProtoMinor: 1,
+	Header: http.Header{
+		"Connection":    {"close"},
+		"Cache-Control": {"max-age=3600, public"},
+	},
+}
 
 func reloadEnvSettings() error {
 	const defaultFlagValue = "NOT_DEFINED_AT_ALL"
@@ -74,39 +85,58 @@ func init() {
 		allNetworks[i] = true
 	}
 
-	defaultBlockPrivateRule = &FinalRule{
-		action:  RuleAction_Block,
-		network: allNetworks,
-		ip:      geodata.GetPrivateIPMatcher(),
+	defaultBlockPrivateRule = &Firewall{
+		action:   RuleAction_Block,
+		network:  allNetworks,
+		ip:       geodata.GetPrivateIPMatcher(),
+		logLevel: log.Severity_Warning.Enum(),
 	}
 
-	defaultBlockAllRule = &FinalRule{
-		action:  RuleAction_Block,
-		network: allNetworks,
+	defaultBlockAllRule = &Firewall{
+		action:   RuleAction_Block,
+		network:  allNetworks,
+		logLevel: log.Severity_Warning.Enum(),
 	}
 }
 
-type FinalRule struct {
-	action     RuleAction
-	network    [8]bool
-	port       net.MemoryPortList
-	ip         geodata.IPMatcher
-	blockDelay *Range
+type Firewall struct {
+	action   RuleAction
+	network  [8]bool
+	port     net.MemoryPortList
+	ip       geodata.IPMatcher
+	delay    *Range
+	logLevel *log.Severity
+	reply    []byte
 }
 
 // Handler handles Freedom connections.
 type Handler struct {
 	policyManager   policy.Manager
 	config          *Config
-	finalRules      []*FinalRule
+	firewall        []*Firewall
 	resolveStrategy internet.DomainStrategy
 	usesDialerProxy bool
 }
 
-func buildFinalRule(config *FinalRuleConfig) (*FinalRule, error) {
-	rule := &FinalRule{
-		action:     config.GetAction(),
-		blockDelay: config.GetBlockDelay(),
+func buildRule(config *FirewallConfig) (*Firewall, error) {
+	rule := &Firewall{
+		action:   config.GetAction(),
+		delay:    config.GetDelay(),
+		logLevel: config.LogLevel,
+	}
+
+	if config.Reply != nil {
+		switch config.Reply.Type {
+		case "", "none":
+		case "http":
+			var data bytes.Buffer
+			common.Must(http403response.Write(&data))
+			rule.reply = data.Bytes()
+		case "custom":
+			rule.reply = config.Reply.CustomResponseData
+		default:
+			return nil, errors.New("unknown firewall reply: " + config.Reply.Type)
+		}
 	}
 
 	if len(config.Networks) == 0 {
@@ -132,25 +162,25 @@ func buildFinalRule(config *FinalRuleConfig) (*FinalRule, error) {
 	return rule, nil
 }
 
-func (r *FinalRule) matchNetwork(network net.Network) bool {
+func (r *Firewall) matchNetwork(network net.Network) bool {
 	return r.network[int(network)]
 }
 
-func (r *FinalRule) matchPort(port net.Port) bool {
+func (r *Firewall) matchPort(port net.Port) bool {
 	if len(r.port) == 0 {
 		return true
 	}
 	return r.port.Contains(port)
 }
 
-func (r *FinalRule) matchIP(addr net.Address) bool {
+func (r *Firewall) matchIP(addr net.Address) bool {
 	if r.ip == nil {
 		return true
 	}
 	return addr != nil && addr.Family().IsIP() && r.ip.Match(addr.IP())
 }
 
-func (r *FinalRule) Apply(network net.Network, address net.Address, port net.Port) bool {
+func (r *Firewall) Apply(network net.Network, address net.Address, port net.Port) bool {
 	if !r.matchNetwork(network) {
 		return false
 	}
@@ -160,14 +190,14 @@ func (r *FinalRule) Apply(network net.Network, address net.Address, port net.Por
 	return r.matchIP(address)
 }
 
-func getDefaultFinalRule(inbound *session.Inbound) *FinalRule {
+func getDefaultRule(inbound *session.Inbound) *Firewall {
 	if inbound == nil {
 		return nil
 	}
 	switch inbound.Name {
 	case "vless-reverse", "mvless-reverse":
 		return defaultBlockAllRule
-	case "vless", "mvless", "vmess", "trojan", "hysteria", "wireguard":
+	case "vless", "mvless", "vmess", "trojan", "hysteria", "wireguard", "masque":
 		return defaultBlockPrivateRule
 	default:
 		if strings.HasPrefix(inbound.Name, "shadowsocks") {
@@ -177,8 +207,8 @@ func getDefaultFinalRule(inbound *session.Inbound) *FinalRule {
 	return nil
 }
 
-func (h *Handler) matchFinalRule(network net.Network, address net.Address, port net.Port, defaultRule *FinalRule) *FinalRule {
-	for _, rule := range h.finalRules {
+func (h *Handler) matchRule(network net.Network, address net.Address, port net.Port, defaultRule *Firewall) *Firewall {
+	for _, rule := range h.firewall {
 		if rule.Apply(network, address, port) {
 			return rule
 		}
@@ -193,19 +223,19 @@ func (h *Handler) matchFinalRule(network net.Network, address net.Address, port 
 func (h *Handler) Init(config *Config, pm policy.Manager) error {
 	h.config = config
 	h.policyManager = pm
-	if h.usesDialerProxy { // freedom is not the final outbound, final rules do not apply
-		if len(config.FinalRules) > 0 {
-			errors.LogWarning(context.Background(), `The "finalRules" setting is ignored when "sockopt.dialerProxy" is set, since freedom is not the final outbound.`)
+	if h.usesDialerProxy { // freedom is not the final outbound, firewall does not apply
+		if len(config.Firewall) > 0 {
+			errors.LogWarning(context.Background(), `The "firewall" setting is ignored when "sockopt.dialerProxy" is set, since freedom is not the final outbound.`)
 		}
 		return nil
 	}
-	h.finalRules = make([]*FinalRule, 0, len(config.FinalRules))
-	for _, rc := range config.FinalRules {
-		rule, err := buildFinalRule(rc)
+	h.firewall = make([]*Firewall, 0, len(config.Firewall))
+	for _, rc := range config.Firewall {
+		rule, err := buildRule(rc)
 		if err != nil {
-			return errors.New("failed to build final rule").Base(err)
+			return errors.New("failed to build firewall rule").Base(err)
 		}
-		h.finalRules = append(h.finalRules, rule)
+		h.firewall = append(h.firewall, rule)
 	}
 	return nil
 }
@@ -215,12 +245,12 @@ func (h *Handler) policy() policy.Session {
 	return p
 }
 
-func (h *Handler) blockDelay(rule *FinalRule) time.Duration {
+func (r *Firewall) blockDuration() time.Duration {
 	min := uint64(30)
 	max := uint64(90)
-	if rule.blockDelay != nil {
-		min = rule.blockDelay.Min
-		max = rule.blockDelay.Max
+	if r.delay != nil {
+		min = r.delay.Min
+		max = r.delay.Max
 	}
 	span := max - min
 	if max < min {
@@ -229,17 +259,46 @@ func (h *Handler) blockDelay(rule *FinalRule) time.Duration {
 	return time.Duration(min+uint64(dice.Roll(int(span+1)))) * time.Second
 }
 
-func (h *Handler) blackhole(ctx context.Context, input buf.Reader, output buf.Writer, rule *FinalRule, dest *net.Destination) error {
-	delay := h.blockDelay(rule)
-	errors.LogInfo(ctx, "blocked target: ", *dest, ", blackholing connection for ", delay)
-	timer := time.AfterFunc(delay, func() {
+func (r *Firewall) log(ctx context.Context, msg ...interface{}) {
+	level := log.Severity_Info
+	if r.logLevel != nil {
+		level = *r.logLevel
+	}
+	switch level {
+	case log.Severity_Debug:
+		errors.LogDebug(ctx, msg...)
+	case log.Severity_Info:
+		errors.LogInfo(ctx, msg...)
+	case log.Severity_Warning:
+		errors.LogWarning(ctx, msg...)
+	case log.Severity_Error:
+		errors.LogError(ctx, msg...)
+	}
+}
+
+func (h *Handler) blackhole(ctx context.Context, input buf.Reader, output buf.Writer, rule *Firewall, dest *net.Destination) error {
+	delay := rule.blockDuration()
+	rule.log(ctx, "target blocked by a firewall rule: ", *dest, ", blackholing connection for ", delay)
+	defer common.Close(output)
+	if len(rule.reply) > 0 {
+		mbc := buf.MultiBufferContainer{}
+		common.Must2(mbc.Write(rule.reply))
+		output.WriteMultiBuffer(mbc.MultiBuffer)
+		// Sleep a little here to make sure the reply is sent to client.
+		time.Sleep(time.Second)
+	}
+	done := make(chan struct{})
+	go func() { // a DispatchLink inbound's reader ignores Interrupt, so don't wait for this copy
+		_ = buf.Copy(input, buf.Discard)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(delay):
 		common.Interrupt(input)
 		common.Interrupt(output)
-		errors.LogInfo(ctx, "closed blackholed connection to blocked target: ", *dest)
-	})
-	defer timer.Stop()
-	defer common.Close(output)
-	_ = buf.Copy(input, buf.Discard)
+		rule.log(ctx, "closed blackholed connection to blocked target: ", *dest)
+	}
 	return nil
 }
 
@@ -261,10 +320,17 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
 	}
 	ob.Name = "freedom"
 	ob.CanSpliceCopy = 1
+
+	if !h.usesDialerProxy && len(h.firewall) > 0 {
+		rule := h.firewall[0]
+		if rule.action == RuleAction_Block && rule.network == allNetworks && len(rule.port) == 0 && rule.ip == nil {
+			return h.blackhole(ctx, link.Reader, link.Writer, rule, &ob.Target)
+		}
+	}
 	inbound := session.InboundFromContext(ctx)
-	var defaultRule *FinalRule
-	if !h.usesDialerProxy { // freedom is not the final outbound, final rules do not apply (and the domain is not resolved)
-		defaultRule = getDefaultFinalRule(inbound)
+	var defaultRule *Firewall
+	if !h.usesDialerProxy { // freedom is not the final outbound, firewall does not apply (and the domain is not resolved)
+		defaultRule = getDefaultRule(inbound)
 	}
 
 	destination := ob.Target
@@ -287,15 +353,19 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
 		}
 	}
 
+	if h.resolveStrategy.HasStrategy() && session.SkipDNSResolveFromContext(ctx) {
+		errors.LogInfo(ctx, "DNS-origin connection to ", destination, " may recursively resolve with sockopt.domainStrategy ", h.resolveStrategy)
+	}
+
 	input := link.Reader
 	output := link.Writer
 
 	var conn stat.Connection
 	var blockedDest *net.Destination
-	var blockedRule *FinalRule
+	var blockedRule *Firewall
 	err := retry.ExponentialBackoff(5, 100).On(func() error {
 		if destination.Address.Family().IsDomain() {
-			if defaultRule != nil || len(h.finalRules) > 0 {
+			if defaultRule != nil || len(h.firewall) > 0 {
 				if strategy := h.resolveStrategy; strategy.HasStrategy() {
 					ips, err := internet.LookupForIP(destination.Address.Domain(), strategy, outGateway)
 					if err != nil { // non-force may still dial with system DNS
@@ -306,7 +376,7 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
 					}
 					for _, ip := range ips {
 						if addr := net.IPAddress(ip); addr != nil {
-							if rule := h.matchFinalRule(destination.Network, addr, destination.Port, defaultRule); rule != nil && rule.action == RuleAction_Block {
+							if rule := h.matchRule(destination.Network, addr, destination.Port, defaultRule); rule != nil && rule.action == RuleAction_Block {
 								blockedDest = &destination
 								blockedDest.Address = addr
 								blockedRule = rule
@@ -321,7 +391,7 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
 					}
 					for _, addr := range addrs {
 						if ipAddr := net.IPAddress(addr.IP); ipAddr != nil {
-							if rule := h.matchFinalRule(destination.Network, ipAddr, destination.Port, defaultRule); rule != nil && rule.action == RuleAction_Block {
+							if rule := h.matchRule(destination.Network, ipAddr, destination.Port, defaultRule); rule != nil && rule.action == RuleAction_Block {
 								blockedDest = &destination
 								blockedDest.Address = ipAddr
 								blockedRule = rule
@@ -332,7 +402,7 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
 				}
 			}
 		} else {
-			if rule := h.matchFinalRule(destination.Network, destination.Address, destination.Port, defaultRule); rule != nil && rule.action == RuleAction_Block {
+			if rule := h.matchRule(destination.Network, destination.Address, destination.Port, defaultRule); rule != nil && rule.action == RuleAction_Block {
 				blockedDest = &destination
 				blockedRule = rule
 				return nil
@@ -353,25 +423,15 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
 	if blockedDest != nil {
 		return h.blackhole(ctx, input, output, blockedRule, blockedDest)
 	}
-	if destination.Address.Family().IsDomain() && (defaultRule != nil || len(h.finalRules) > 0) {
+	if destination.Address.Family().IsDomain() && (defaultRule != nil || len(h.firewall) > 0) {
 		// pre-check may fail or dialer may select another IP
 		remoteDest := net.DestinationFromAddr(conn.RemoteAddr())
-		if rule := h.matchFinalRule(remoteDest.Network, remoteDest.Address, remoteDest.Port, defaultRule); rule != nil && rule.action == RuleAction_Block {
+		if rule := h.matchRule(remoteDest.Network, remoteDest.Address, remoteDest.Port, defaultRule); rule != nil && rule.action == RuleAction_Block {
 			conn.Close()
 			return h.blackhole(ctx, input, output, rule, &remoteDest)
 		}
 	}
 
-	if h.config.ProxyProtocol > 0 && h.config.ProxyProtocol <= 2 {
-		version := byte(h.config.ProxyProtocol)
-		srcAddr := inbound.Source.RawNetAddr()
-		dstAddr := conn.RemoteAddr()
-		header := proxyproto.HeaderProxyFromAddrs(version, srcAddr, dstAddr)
-		if _, err = header.WriteTo(conn); err != nil {
-			conn.Close()
-			return errors.New("failed to set PROXY protocol v", version).Base(err)
-		}
-	}
 	defer conn.Close()
 	errors.LogInfo(ctx, "connection opened to ", destination, ", local endpoint ", conn.LocalAddr(), ", remote endpoint ", conn.RemoteAddr())
 
@@ -462,7 +522,7 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
 	return nil
 }
 
-func NewPacketReader(conn net.Conn, h *Handler, defaultRule *FinalRule, UDPOverride net.Destination, DialDest net.Destination) buf.Reader {
+func NewPacketReader(conn net.Conn, h *Handler, defaultRule *Firewall, UDPOverride net.Destination, DialDest net.Destination) buf.Reader {
 	iConn := conn
 	statConn, ok := iConn.(*stat.CounterConnection)
 	if ok {
@@ -495,7 +555,7 @@ type PacketReader struct {
 	*net.PacketConnWrapper
 	stats.Counter
 	Handler           *Handler
-	DefaultRule       *FinalRule
+	DefaultRule       *Firewall
 	IsOverridden      bool
 	InitUnchangedAddr net.Address
 	InitChangedAddr   net.Address
@@ -512,7 +572,7 @@ func (r *PacketReader) ReadMultiBuffer() (buf.MultiBuffer, error) {
 		}
 		udpAddr := d.(*net.UDPAddr)
 		sourceAddr := net.IPAddress(udpAddr.IP)
-		if rule := r.Handler.matchFinalRule(net.Network_UDP, sourceAddr, net.Port(udpAddr.Port), r.DefaultRule); rule != nil && rule.action == RuleAction_Block {
+		if rule := r.Handler.matchRule(net.Network_UDP, sourceAddr, net.Port(udpAddr.Port), r.DefaultRule); rule != nil && rule.action == RuleAction_Block {
 			continue
 		}
 		b.Resize(0, int32(n))
@@ -537,7 +597,7 @@ func (r *PacketReader) ReadMultiBuffer() (buf.MultiBuffer, error) {
 }
 
 // DialDest means the dial target used in the dialer when creating conn
-func NewPacketWriter(conn net.Conn, h *Handler, defaultRule *FinalRule, UDPOverride net.Destination, DialDest net.Destination, outGateway net.Address) buf.Writer {
+func NewPacketWriter(conn net.Conn, h *Handler, defaultRule *Firewall, UDPOverride net.Destination, DialDest net.Destination, outGateway net.Address) buf.Writer {
 	iConn := conn
 	statConn, ok := iConn.(*stat.CounterConnection)
 	if ok {
@@ -571,7 +631,7 @@ type PacketWriter struct {
 	*net.PacketConnWrapper
 	stats.Counter
 	*Handler
-	DefaultRule *FinalRule
+	DefaultRule *Firewall
 	UDPOverride net.Destination
 
 	// Dest of udp packets might be a domain, we will resolve them to IP
@@ -630,7 +690,7 @@ func (w *PacketWriter) WriteMultiBuffer(mb buf.MultiBuffer) error {
 					}
 				}
 			}
-			if rule := w.matchFinalRule(net.Network_UDP, b.UDP.Address, b.UDP.Port, w.DefaultRule); rule != nil && rule.action == RuleAction_Block {
+			if rule := w.matchRule(net.Network_UDP, b.UDP.Address, b.UDP.Port, w.DefaultRule); rule != nil && rule.action == RuleAction_Block {
 				b.Release()
 				continue
 			}

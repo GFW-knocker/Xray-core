@@ -87,6 +87,7 @@ https://github.com/XTLS/Xray-core
   - [GenyConnect](https://github.com/genyleap/GenyConnect)
   - [OneXray](https://github.com/OneXray/OneXray)
   - [XrayUI-dev](https://github.com/PhoenixNil/XrayUI-dev)
+  - [keqdroid](https://github.com/Lemonochka/keqdroid)
 - Android
   - [MahsaNG](https://github.com/GFW-knocker/MahsaNG)
   - [v2rayNG](https://github.com/2dust/v2rayNG)
@@ -97,6 +98,7 @@ https://github.com/XTLS/Xray-core
   - [AnyPortal](https://github.com/AnyPortal/AnyPortal)
   - [OneXray](https://github.com/OneXray/OneXray)
   - [AsteriskNG](https://github.com/Asterisk4Magisk/AsteriskNG)
+  - [keqdroid](https://github.com/Lemonochka/keqdroid)
 - iOS & macOS arm64 & tvOS
   - [Happ](https://apps.apple.com/app/happ-proxy-utility/id6504287215) | [Happ RU](https://apps.apple.com/ru/app/happ-proxy-utility-plus/id6746188973) | [Happ tvOS](https://apps.apple.com/us/app/happ-proxy-utility-for-tv/id6748297274)
   - [Streisand](https://apps.apple.com/app/streisand/id6450534064)
@@ -122,6 +124,7 @@ https://github.com/XTLS/Xray-core
   - [v2rayN](https://github.com/2dust/v2rayN)
   - [GenyConnect](https://github.com/genyleap/GenyConnect)
   - [OneXray](https://github.com/OneXray/OneXray)
+  - [keqdroid](https://github.com/Lemonochka/keqdroid)
 - HarmonyOS
   - [Hey](https://github.com/popsiclelmlm/Hey)
 
@@ -205,15 +208,32 @@ CGO_ENABLED=0 go build -o xray -trimpath -ldflags "-s -w -buildid=" ./main
 CGO_ENABLED=0 go build -o xray -trimpath -buildvcs=false -gcflags="all=-l=4" -ldflags="-X github.com/GFW-knocker/Xray-core/core.build=REPLACE -s -w -buildid=" -v ./main
 ```
 
+For Windows (x86-64 and AArch64, not win7):
+
+```bash
+GOOS=windows GOARCH=amd64 GOAMD64=v2 CGO_ENABLED=0 go build -o xray.exe -trimpath -buildvcs=false -gcflags="all=-l=4" -ldflags="-X github.com/GFW-knocker/Xray-core/core.build=REPLACE -s -w -buildid=" -v ./main
+GOOS=windows GOARCH=arm64 GOARM64=v8.2 CGO_ENABLED=0 go build -o xray.exe -trimpath -buildvcs=false -gcflags="all=-l=4" -ldflags="-X github.com/GFW-knocker/Xray-core/core.build=REPLACE -s -w -buildid=" -v ./main
+```
+
+For macOS:
+
+```bash
+GOOS=darwin GOARCH=amd64 GOAMD64=v2 CGO_ENABLED=0 go build -o xray -trimpath -buildvcs=false -gcflags="all=-l=4" -ldflags="-X github.com/GFW-knocker/Xray-core/core.build=REPLACE -s -w -buildid=" -v ./main
+GOOS=darwin GOARCH=arm64 GOARM64=v8.4 CGO_ENABLED=0 go build -o xray -trimpath -buildvcs=false -gcflags="all=-l=4" -ldflags="-X github.com/GFW-knocker/Xray-core/core.build=REPLACE -s -w -buildid=" -v ./main
+```
+
 For Android:
 
 ```bash
-GOOS=android GOARCH=arm64 CGO_ENABLED=1 CC=/path/to/aarch64-linux-android24-clang go build -o xray -trimpath -buildvcs=false -gcflags="all=-l=4" -ldflags="-X github.com/xtls/xray-core/core.build=REPLACE -s -w -buildid= -checklinkname=0" -v ./main
-GOOS=android GOARCH=amd64 CGO_ENABLED=1 CC=/path/to/x86_64-linux-android24-clang go build -o xray -trimpath -buildvcs=false -gcflags="all=-l=4" -ldflags="-X github.com/xtls/xray-core/core.build=REPLACE -s -w -buildid= -checklinkname=0" -v ./main
+GOOS=android GOARCH=arm64 CGO_ENABLED=1 CC=/path/to/aarch64-linux-android24-clang go build -o xray -trimpath -buildvcs=false -gcflags="all=-l=4" -ldflags="-X github.com/GFW-knocker/Xray-core/core.build=REPLACE -s -w -buildid= -checklinkname=0 -extldflags=-Wl,--pack-dyn-relocs=android" -v ./main
+GOOS=android GOARCH=amd64 CGO_ENABLED=1 CC=/path/to/x86_64-linux-android24-clang go build -o xray -trimpath -buildvcs=false -gcflags="all=-l=4" -ldflags="-X github.com/GFW-knocker/Xray-core/core.build=REPLACE -s -w -buildid= -checklinkname=0 -extldflags=-Wl,--pack-dyn-relocs=android" -v ./main
 ```
 
-If you are compiling a 32-bit MIPS/MIPSLE target, use this command instead:
+For Linux (MIPS32 and MIPS32LE):
 
 ```bash
-CGO_ENABLED=0 go build -o xray -trimpath -buildvcs=false -gcflags="-l=4" -ldflags="-X github.com/GFW-knocker/Xray-core/core.build=REPLACE -s -w -buildid=" -v ./main
+GOOS=linux GOARCH=mips GOMIPS=hardfloat CGO_ENABLED=0 go build -o xray -trimpath -buildvcs=false -ldflags="-X github.com/GFW-knocker/Xray-core/core.build=REPLACE -s -w -buildid=" -v ./main
+GOOS=linux GOARCH=mips GOMIPS=softfloat CGO_ENABLED=0 go build -o xray -trimpath -buildvcs=false -ldflags="-X github.com/GFW-knocker/Xray-core/core.build=REPLACE -s -w -buildid=" -v ./main
+GOOS=linux GOARCH=mipsle GOMIPS=hardfloat CGO_ENABLED=0 go build -o xray -trimpath -buildvcs=false -ldflags="-X github.com/GFW-knocker/Xray-core/core.build=REPLACE -s -w -buildid=" -v ./main
+GOOS=linux GOARCH=mipsle GOMIPS=softfloat CGO_ENABLED=0 go build -o xray -trimpath -buildvcs=false -ldflags="-X github.com/GFW-knocker/Xray-core/core.build=REPLACE -s -w -buildid=" -v ./main
 ```

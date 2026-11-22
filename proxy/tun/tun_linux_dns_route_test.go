@@ -17,7 +17,6 @@ import (
 	"github.com/GFW-knocker/Xray-core/common/net"
 	"github.com/GFW-knocker/Xray-core/common/serial"
 	"github.com/GFW-knocker/Xray-core/core"
-	"github.com/GFW-knocker/Xray-core/proxy/blackhole"
 	proxydns "github.com/GFW-knocker/Xray-core/proxy/dns"
 	"github.com/GFW-knocker/Xray-core/proxy/freedom"
 )
@@ -73,7 +72,7 @@ func newRouteTestContext(t *testing.T, withDNSApp bool, nameServers []*appdns.Na
 		Outbound: []*core.OutboundHandlerConfig{
 			{Tag: "direct", ProxySettings: serial.ToTypedMessage(&freedom.Config{})},
 			{Tag: "dns", ProxySettings: serial.ToTypedMessage(&proxydns.Config{})},
-			{Tag: "block", ProxySettings: serial.ToTypedMessage(&blackhole.Config{})},
+			{Tag: "block", ProxySettings: serial.ToTypedMessage(&freedom.Config{Firewall: []*freedom.FirewallConfig{{Action: freedom.RuleAction_Block, Delay: &freedom.Range{}}}})},
 		},
 	})
 	if err != nil {

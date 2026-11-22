@@ -35,7 +35,6 @@ import (
 	_ "github.com/GFW-knocker/Xray-core/app/observatory"
 
 	// Inbound and outbound proxies.
-	_ "github.com/GFW-knocker/Xray-core/proxy/blackhole"
 	_ "github.com/GFW-knocker/Xray-core/proxy/dns"
 	_ "github.com/GFW-knocker/Xray-core/proxy/dokodemo"
 	_ "github.com/GFW-knocker/Xray-core/proxy/freedom"

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/GFW-knocker/Xray-core/common/geodata"
+	"github.com/GFW-knocker/Xray-core/common/log"
 	"github.com/GFW-knocker/Xray-core/common/net"
 	"github.com/GFW-knocker/Xray-core/common/protocol"
 	. "github.com/GFW-knocker/Xray-core/infra/conf"
@@ -41,12 +42,17 @@ func TestFreedomConfig(t *testing.T) {
 		},
 		{
 			Input: `{
-				"finalRules": [{
+				"firewall": [{
 					"action": "block",
 					"network": "tcp,udp",
 					"port": "53,443",
 					"ip": ["10.0.0.0/8", "2001:db8::/32"],
-					"blockDelay": "30-60"
+					"delay": "30-60",
+					"logLevel": "debug",
+					"reply": {
+						"type": "custom",
+						"customResponseData": "Y3VzdG9tIHJlc3BvbnNl"
+					}
 				}, {
 					"action": "allow",
 					"network": ["udp"]
@@ -54,7 +60,7 @@ func TestFreedomConfig(t *testing.T) {
 			}`,
 			Parser: loadJSON(creator),
 			Output: &freedom.Config{
-				FinalRules: []*freedom.FinalRuleConfig{
+				Firewall: []*freedom.FirewallConfig{
 					{
 						Action:   freedom.RuleAction_Block,
 						Networks: []net.Network{net.Network_TCP, net.Network_UDP},
@@ -86,9 +92,11 @@ func TestFreedomConfig(t *testing.T) {
 								},
 							},
 						},
-						BlockDelay: &freedom.Range{
-							Min: 30,
-							Max: 60,
+						Delay:    &freedom.Range{Min: 30, Max: 60},
+						LogLevel: log.Severity_Debug.Enum(),
+						Reply: &freedom.Reply{
+							Type:               "custom",
+							CustomResponseData: []byte("custom response"),
 						},
 					},
 					{

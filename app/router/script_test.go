@@ -23,7 +23,6 @@ import (
 	"github.com/GFW-knocker/Xray-core/features/outbound"
 	"github.com/GFW-knocker/Xray-core/features/routing"
 	routing_session "github.com/GFW-knocker/Xray-core/features/routing/session"
-	"github.com/GFW-knocker/Xray-core/proxy/blackhole"
 	"github.com/GFW-knocker/Xray-core/proxy/freedom"
 	wireDNS "github.com/miekg/dns"
 )
@@ -397,9 +396,9 @@ end`)
 			serial.ToTypedMessage(&proxyman.OutboundConfig{}),
 		},
 		Outbound: []*core.OutboundHandlerConfig{
-			{Tag: "default", ProxySettings: serial.ToTypedMessage(&blackhole.Config{})},
+			{Tag: "default", ProxySettings: serial.ToTypedMessage(&freedom.Config{Firewall: []*freedom.FirewallConfig{{Action: freedom.RuleAction_Block, Delay: &freedom.Range{}}}})},
 			{Tag: "direct", ProxySettings: serial.ToTypedMessage(&freedom.Config{
-				FinalRules: []*freedom.FinalRuleConfig{{Action: freedom.RuleAction_Allow}},
+				Firewall: []*freedom.FirewallConfig{{Action: freedom.RuleAction_Allow}},
 			})},
 		},
 	})

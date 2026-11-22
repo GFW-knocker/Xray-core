@@ -2,11 +2,15 @@ package geodata
 
 import (
 	"context"
+	"path/filepath"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/GFW-knocker/Xray-core/common"
 	"github.com/GFW-knocker/Xray-core/common/errors"
 	commongeodata "github.com/GFW-knocker/Xray-core/common/geodata"
+	"github.com/GFW-knocker/Xray-core/common/platform/filesystem"
 	"github.com/GFW-knocker/Xray-core/core"
 	"github.com/GFW-knocker/Xray-core/features/routing"
 	"github.com/robfig/cron/v3"
@@ -24,6 +28,24 @@ type Instance struct {
 func New(ctx context.Context, config *Config) (*Instance, error) {
 	if config.Cron == "" {
 		return &Instance{}, nil
+	}
+	if len(config.Assets) > 100 {
+		return nil, errors.New("geodata supports at most 100 assets")
+	}
+	for _, asset := range config.Assets {
+		if !strings.EqualFold(filepath.Ext(asset.GetFile()), ".dat") {
+			return nil, errors.New("geodata asset file extension must be .dat")
+		}
+		if _, err := filesystem.ResolveAsset(asset.GetFile()); err != nil {
+			return nil, errors.New("invalid geodata asset file: ", asset.GetFile()).Base(err)
+		}
+	}
+	schedule, err := cron.ParseStandard(config.Cron)
+	if err != nil {
+		return nil, errors.New("invalid geodata cron").Base(err)
+	}
+	if interval, ok := schedule.(cron.ConstantDelaySchedule); ok && interval.Delay < time.Minute {
+		return nil, errors.New("geodata cron interval must be at least 1 minute")
 	}
 
 	g := &Instance{
@@ -44,9 +66,7 @@ func New(ctx context.Context, config *Config) (*Instance, error) {
 		cron.WithChain(cron.SkipIfStillRunning(cron.DiscardLogger)),
 		cron.WithLogger(cron.DiscardLogger),
 	)
-	if _, err := g.tasker.AddFunc(config.Cron, g.execute); err != nil {
-		return nil, errors.New("invalid geodata cron").Base(err)
-	}
+	g.tasker.Schedule(schedule, cron.FuncJob(g.execute))
 	errors.LogInfo(ctx, "scheduled geodata reload with cron: ", config.Cron)
 
 	return g, nil

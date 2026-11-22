@@ -10,6 +10,7 @@ import (
 
 	"github.com/GFW-knocker/Xray-core/common/errors"
 	"github.com/GFW-knocker/Xray-core/common/geodata"
+	"github.com/GFW-knocker/Xray-core/common/log"
 	xnet "github.com/GFW-knocker/Xray-core/common/net"
 	"github.com/GFW-knocker/Xray-core/common/protocol"
 	"github.com/GFW-knocker/Xray-core/proxy/freedom"
@@ -18,17 +19,18 @@ import (
 )
 
 type FreedomConfig struct {
-	TargetStrategy string                    `json:"targetStrategy"`
-	DomainStrategy string                    `json:"domainStrategy"`
-	Redirect       string                    `json:"redirect"`
-	UserLevel      uint32                    `json:"userLevel"`
-	Fragment       *Fragment                 `json:"fragment"`
-	Noise          *Noise                    `json:"noise"`
-	Noises         []*Noise                  `json:"noises"`
-	NoiseKeepAlive uint32                    `json:"noiseKeepAlive"`
-	ProxyProtocol  uint32                    `json:"proxyProtocol"`
-	IPsBlocked     *StringList               `json:"ipsBlocked"`
-	FinalRules     []*FreedomFinalRuleConfig `json:"finalRules"`
+	TargetStrategy string                   `json:"targetStrategy"`
+	DomainStrategy string                   `json:"domainStrategy"`
+	Redirect       string                   `json:"redirect"`
+	UserLevel      uint32                   `json:"userLevel"`
+	Fragment       *Fragment                `json:"fragment"`
+	Noise          *Noise                   `json:"noise"`
+	Noises         []*Noise                 `json:"noises"`
+	NoiseKeepAlive uint32                   `json:"noiseKeepAlive"`
+	ProxyProtocol  uint32                   `json:"proxyProtocol"`
+	IPsBlocked     *StringList              `json:"ipsBlocked"`
+	Firewall       []*FreedomFirewallConfig `json:"firewall"`
+	FinalRules     []*FreedomFirewallConfig `json:"finalRules"`
 }
 
 // Upper bounds for the "fragment" ranges. These exist because the values are
@@ -119,19 +121,45 @@ type Noise struct {
 	ApplyTo string      `json:"applyTo"`
 }
 
-type FreedomFinalRuleConfig struct {
-	Action     string       `json:"action"`
-	Network    *NetworkList `json:"network"`
-	Port       *PortList    `json:"port"`
-	IP         *StringList  `json:"ip"`
-	BlockDelay *Int32Range  `json:"blockDelay"`
+type FreedomFirewallConfig struct {
+	Action     string              `json:"action"`
+	Network    *NetworkList        `json:"network"`
+	Port       *PortList           `json:"port"`
+	IP         *StringList         `json:"ip"`
+	Delay      *Int32Range         `json:"delay"`
+	LogLevel   string              `json:"logLevel"`
+	Reply      *FreedomReplyConfig `json:"reply"`
+	BlockDelay *Int32Range         `json:"blockDelay"`
+}
+
+type FreedomReplyConfig struct {
+	Type               string `json:"type"`
+	CustomResponseData string `json:"customResponseData"`
+}
+
+func (c *FreedomReplyConfig) Build() (*freedom.Reply, error) {
+	replyType := strings.ToLower(c.Type)
+	switch replyType {
+	case "none", "":
+		return &freedom.Reply{Type: "none"}, nil
+	case "http":
+		return &freedom.Reply{Type: "http"}, nil
+	case "custom":
+		data, err := base64.StdEncoding.DecodeString(c.CustomResponseData)
+		if err != nil {
+			return nil, errors.New("failed to decode custom reply data: " + err.Error())
+		}
+		return &freedom.Reply{Type: "custom", CustomResponseData: data}, nil
+	default:
+		return nil, errors.New("unknown firewall reply: " + replyType)
+	}
 }
 
 // Build implements Buildable
 func (c *FreedomConfig) Build() (proto.Message, error) {
 	if c.IPsBlocked != nil {
 		// todo: remove legacy
-		errors.LogWarning(context.Background(), `The feature "ipsBlocked" has been removed and migrated to "finalRules". Please update your config(s) according to release note and documentation.`)
+		errors.LogWarning(context.Background(), `The feature "ipsBlocked" has been removed and migrated to "firewall". Please update your config(s) according to release note and documentation.`)
 	}
 
 	config := new(freedom.Config)
@@ -360,15 +388,22 @@ func (c *FreedomConfig) Build() (proto.Message, error) {
 	}
 
 	if c.ProxyProtocol > 0 && c.ProxyProtocol <= 2 {
-		config.ProxyProtocol = c.ProxyProtocol
+		errors.PrintDeprecatedFeatureWarning(`"proxyProtocol" in Freedom`, `"proxy-protocol" in "streamSettings.finalmask.tcp"`)
 	}
 
-	for _, r := range c.FinalRules {
+	firewall := c.Firewall
+	if c.FinalRules != nil {
+		errors.PrintDeprecatedFeatureWarning("finalRules", "firewall")
+		if firewall == nil {
+			firewall = c.FinalRules
+		}
+	}
+	for _, r := range firewall {
 		rule, err := r.Build()
 		if err != nil {
 			return nil, err
 		}
-		config.FinalRules = append(config.FinalRules, rule)
+		config.Firewall = append(config.Firewall, rule)
 	}
 
 	return config, nil
@@ -436,8 +471,8 @@ func ParseNoise(noise *Noise) (*freedom.Noise, error) {
 	return NConfig, nil
 }
 
-func (c *FreedomFinalRuleConfig) Build() (*freedom.FinalRuleConfig, error) {
-	rule := &freedom.FinalRuleConfig{}
+func (c *FreedomFirewallConfig) Build() (*freedom.FirewallConfig, error) {
+	rule := &freedom.FirewallConfig{}
 
 	switch strings.ToLower(c.Action) {
 	case "allow":
@@ -465,10 +500,45 @@ func (c *FreedomFinalRuleConfig) Build() (*freedom.FinalRuleConfig, error) {
 	}
 
 	if c.BlockDelay != nil {
-		rule.BlockDelay = &freedom.Range{
-			Min: uint64(c.BlockDelay.From),
-			Max: uint64(c.BlockDelay.To),
+		errors.PrintDeprecatedFeatureWarning("firewall.blockDelay", "firewall.delay")
+		c.Delay = c.BlockDelay
+	}
+
+	if rule.Action != freedom.RuleAction_Block {
+		if c.Delay != nil || c.LogLevel != "" || c.Reply != nil {
+			return nil, errors.New("delay, logLevel and reply are only supported for firewall action block")
 		}
+		return rule, nil
+	}
+
+	if c.Delay != nil {
+		rule.Delay = &freedom.Range{
+			Min: uint64(c.Delay.From),
+			Max: uint64(c.Delay.To),
+		}
+	}
+
+	if c.Reply != nil {
+		reply, err := c.Reply.Build()
+		if err != nil {
+			return nil, err
+		}
+		rule.Reply = reply
+	}
+
+	switch strings.ToLower(c.LogLevel) {
+	case "", "info":
+		rule.LogLevel = log.Severity_Info.Enum()
+	case "none":
+		rule.LogLevel = log.Severity_Unknown.Enum()
+	case "debug":
+		rule.LogLevel = log.Severity_Debug.Enum()
+	case "warning":
+		rule.LogLevel = log.Severity_Warning.Enum()
+	case "error":
+		rule.LogLevel = log.Severity_Error.Enum()
+	default:
+		return nil, errors.New("unknown firewall.logLevel: ", c.LogLevel)
 	}
 
 	return rule, nil

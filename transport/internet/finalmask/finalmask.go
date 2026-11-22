@@ -9,9 +9,11 @@ import (
 	"github.com/GFW-knocker/Xray-core/common/buf"
 	"github.com/GFW-knocker/Xray-core/common/errors"
 	"github.com/GFW-knocker/Xray-core/common/net"
+	"github.com/GFW-knocker/Xray-core/common/session"
 )
 
 type Dialer struct {
+	Source  net.Addr
 	DialTCP func(net.Destination) (net.Conn, error)
 	DialUDP func(net.Destination) (net.Conn, error)
 	// DialTCPDetached dials like DialTCP but is not cancelled with the request
@@ -91,6 +93,9 @@ func (fm *FinalMask) DialTCP(ctx context.Context, dest net.Destination) (net.Con
 			}
 			return &net.PacketConnWrapper{PacketConn: conn, Dest: addr}, err
 		},
+	}
+	if inbound := session.InboundFromContext(ctx); inbound != nil && inbound.Source.IsValid() {
+		dialer.Source = inbound.Source.RawNetAddr()
 	}
 	for i := range fm.tcpMasks {
 		var newConn net.Conn

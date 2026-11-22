@@ -284,6 +284,7 @@ type SplitHTTPConfig struct {
 	ServerMaxHeaderBytes int32             `json:"serverMaxHeaderBytes"`
 	Xmux                 XmuxConfig        `json:"xmux"`
 	DownloadSettings     *StreamConfig     `json:"downloadSettings"`
+	H2Params             json.RawMessage   `json:"h2Params"`
 	Extra                json.RawMessage   `json:"extra"`
 }
 
@@ -486,6 +487,7 @@ func (c *SplitHTTPConfig) Build() (proto.Message, error) {
 		ServerMaxHeaderBytes: c.ServerMaxHeaderBytes,
 		SessionIDTable:       c.SessionIDTable,
 		SessionIDLength:      newRangeConfig(c.SessionIDLength),
+		H2Params:             c.H2Params,
 		Xmux: &splithttp.XmuxConfig{
 			MaxConcurrency:   newRangeConfig(c.Xmux.MaxConcurrency),
 			MaxConnections:   newRangeConfig(c.Xmux.MaxConnections),
@@ -686,10 +688,10 @@ func (c *HttpUpgradeConfig) Build() (proto.Message, error) {
 
 const (
 	Byte     = 1
-	Kilobyte = 1024 * Byte
-	Megabyte = 1024 * Kilobyte
-	Gigabyte = 1024 * Megabyte
-	Terabyte = 1024 * Gigabyte
+	Kilobyte = 1000 * Byte
+	Megabyte = 1000 * Kilobyte
+	Gigabyte = 1000 * Megabyte
+	Terabyte = 1000 * Gigabyte
 )
 
 type Bandwidth string
@@ -809,6 +811,18 @@ type XDriveConfig struct {
 	EagerWindowMs     uint32          `json:"eagerWindowMs"`
 	HoleTimeoutMs     uint32          `json:"holeTimeoutMs"`
 	Template          json.RawMessage `json:"template"`
+	S3                *XDriveS3Config `json:"s3"`
+	Xmux              XmuxConfig      `json:"xmux"`
+
+	// set by StreamConfig when "alpn" is ["h3"]
+	h3 bool
+}
+
+type XDriveS3Config struct {
+	Endpoint  string `json:"endpoint"`
+	Region    string `json:"region"`
+	Bucket    string `json:"bucket"`
+	PathStyle *bool  `json:"pathStyle"`
 }
 
 // Build implements Buildable.
@@ -827,8 +841,27 @@ func (c *XDriveConfig) Build() (proto.Message, error) {
 		if len(c.Template) == 0 {
 			return nil, errors.New(`service "template" needs a "template" object`)
 		}
+	case "s3":
+		if c.S3 == nil {
+			return nil, errors.New(`service "s3" needs an "s3" object`)
+		}
 	default:
-		return nil, errors.New(`unknown "service": "`, c.Service, `", use "google-drive", "template" or "local"`)
+		return nil, errors.New(`unknown "service": "`, c.Service, `", use "google-drive", "template", "s3" or "local"`)
+	}
+	if c.Xmux.MaxConnections.To > 0 && c.Xmux.MaxConcurrency.To > 0 {
+		return nil, errors.New("maxConnections cannot be specified together with maxConcurrency")
+	}
+	if c.Xmux == (XmuxConfig{}) {
+		c.Xmux.MaxConnections.From = 1
+		c.Xmux.MaxConnections.To = 1
+		if c.Service == "google-drive" && !c.h3 {
+			// Google gives an h2 connection 1 MiB of window, which a few sessions on
+			// a long rtt would share, an h3 connection has no such limit
+			c.Xmux.MaxConnections.From = 4
+			c.Xmux.MaxConnections.To = 4
+		}
+		c.Xmux.HMaxReusableSecs.From = 1800
+		c.Xmux.HMaxReusableSecs.To = 3000
 	}
 	config := &xdrive.Config{
 		RemoteFolder:      c.RemoteFolder,
@@ -843,6 +876,25 @@ func (c *XDriveConfig) Build() (proto.Message, error) {
 		EagerWindowMs:     c.EagerWindowMs,
 		HoleTimeoutMs:     c.HoleTimeoutMs,
 		Template:          string(c.Template),
+		Xmux: &splithttp.XmuxConfig{
+			MaxConcurrency:   newRangeConfig(c.Xmux.MaxConcurrency),
+			MaxConnections:   newRangeConfig(c.Xmux.MaxConnections),
+			CMaxReuseTimes:   newRangeConfig(c.Xmux.CMaxReuseTimes),
+			HMaxRequestTimes: newRangeConfig(c.Xmux.HMaxRequestTimes),
+			HMaxReusableSecs: newRangeConfig(c.Xmux.HMaxReusableSecs),
+			HKeepAlivePeriod: c.Xmux.HKeepAlivePeriod,
+		},
+	}
+	if c.Service == "s3" {
+		config.S3 = &xdrive.S3Config{
+			Endpoint:  c.S3.Endpoint,
+			Region:    c.S3.Region,
+			Bucket:    c.S3.Bucket,
+			PathStyle: c.S3.PathStyle == nil || *c.S3.PathStyle,
+		}
+		if err := xdrive.ValidateS3Config(config); err != nil {
+			return nil, err
+		}
 	}
 	return config, nil
 }

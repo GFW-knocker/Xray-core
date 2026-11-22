@@ -13,7 +13,6 @@ import (
 	"github.com/GFW-knocker/Xray-core/common/net"
 	"github.com/GFW-knocker/Xray-core/common/serial"
 	"github.com/GFW-knocker/Xray-core/core"
-	"github.com/GFW-knocker/Xray-core/proxy/blackhole"
 	"github.com/GFW-knocker/Xray-core/proxy/freedom"
 	"github.com/GFW-knocker/Xray-core/proxy/socks"
 	"github.com/GFW-knocker/Xray-core/testing/servers/tcp"
@@ -78,7 +77,7 @@ func TestResolveIP(t *testing.T) {
 		},
 		Outbound: []*core.OutboundHandlerConfig{
 			{
-				ProxySettings: serial.ToTypedMessage(&blackhole.Config{}),
+				ProxySettings: serial.ToTypedMessage(&freedom.Config{Firewall: []*freedom.FirewallConfig{{Action: freedom.RuleAction_Block, Delay: &freedom.Range{}}}}),
 			},
 			{
 				Tag: "direct",

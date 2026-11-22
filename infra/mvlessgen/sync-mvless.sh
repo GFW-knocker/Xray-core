@@ -171,6 +171,14 @@ while IFS= read -r rel; do
 		"$rel"
 done < <(cd "$stage" && find proxy/mvless -name '*.proto')
 
+# infra/vprotogen compiles in-process and writes "protoc (unknown)" where protoc
+# writes its own version; the generated code is otherwise byte-identical. Take
+# that toolchain line from the reference header, so either generator works.
+ref4="$(sed -n '4p' core/config.pb.go | tr -d '')"
+while IFS= read -r pb; do
+	awk -v l="$ref4" 'NR == 4 { print l; next } { print }' "$pb" >"$pb.tmp" && mv "$pb.tmp" "$pb"
+done < <(find "$stage/proxy/mvless" -name '*.pb.go')
+
 # core/config.pb.go is the repo's reference for the generator toolchain, and CI
 # (.github/workflows/test.yml, check-proto) requires every *.pb.go to carry the
 # same 4-line header. Fail here rather than committing files that job rejects.

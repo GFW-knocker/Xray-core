@@ -2,6 +2,8 @@ package internet
 
 import (
 	"context"
+	go_errors "errors"
+	"runtime"
 	"sync"
 	"syscall"
 	"time"
@@ -69,9 +71,10 @@ func (d *DefaultSystemDialer) Dial(ctx context.Context, src net.Address, dest ne
 		}
 		var lc net.ListenConfig
 		if sockopt != nil || len(Controllers) > 0 {
-			lc.Control = func(network, address string, c syscall.RawConn) error {
+			lc.Control = func(network, _ string, c syscall.RawConn) error {
+				// ListenPacket supplies a local address; dialer controllers need the destination.
 				for _, ctl := range Controllers {
-					if err := ctl(network, address, c); err != nil {
+					if err := ctl(network, destAddr.String(), c); err != nil {
 						return errors.New("failed to apply external controller").Base(err)
 					}
 				}
@@ -91,6 +94,16 @@ func (d *DefaultSystemDialer) Dial(ctx context.Context, src net.Address, dest ne
 			}
 		}
 		packetConn, err := lc.ListenPacket(ctx, srcAddr.Network(), srcAddr.String())
+		var bindErr *BindError
+		if err != nil && runtime.GOOS == "windows" && go_errors.As(err, &bindErr) {
+			// Keep dual-stack UDP when possible. If the interface cannot bind both
+			// families, retry a socket that cannot send on the unbound family.
+			network := "udp6"
+			if destAddr.IP.To4() != nil {
+				network = "udp4"
+			}
+			packetConn, err = lc.ListenPacket(ctx, network, srcAddr.String())
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -197,6 +210,7 @@ func UseAlternativeSystemDialer(dialer SystemDialer) {
 
 // RegisterDialerController adds a controller to the effective system dialer.
 // The controller can be used to operate on file descriptors before they are put into use.
+// It receives the network and resolved remote address, as in net.Dialer.Control.
 // It only works when effective dialer is the default dialer.
 //
 // xray:api:beta

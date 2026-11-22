@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/GFW-knocker/Xray-core/common/errors"
 	"github.com/GFW-knocker/Xray-core/transport/internet"
@@ -26,10 +27,17 @@ type Storage interface {
 	Close() error
 }
 
+// testStorageFactory lets tests substitute a backend for newStorage; nil in
+// production so behaviour is unchanged.
+var testStorageFactory atomic.Pointer[func(config *Config) (Storage, error)]
+
 func newStorage(streamSettings *internet.MemoryStreamConfig) (Storage, error) {
 	config, err := streamConfig(streamSettings)
 	if err != nil {
 		return nil, err
+	}
+	if f := testStorageFactory.Load(); f != nil {
+		return (*f)(config)
 	}
 
 	switch config.Service {
@@ -43,9 +51,28 @@ func newStorage(streamSettings *internet.MemoryStreamConfig) (Storage, error) {
 		return sharedStorage(streamSettings, config, func() (Storage, error) {
 			return newTemplateStorage(streamSettings, config)
 		})
+	case "s3":
+		return sharedStorage(streamSettings, config, func() (Storage, error) {
+			return newS3Storage(streamSettings, config)
+		})
 	default:
 		return nil, errors.New("unsupported service: ", config.Service)
 	}
+}
+
+// sessionStorage returns the storage of one session, which takes connections
+// of XMUX until Close, with the token and cache of storage. Local storage has
+// no connections
+func sessionStorage(storage Storage) Storage {
+	switch s := storage.(type) {
+	case *driveStorage:
+		return s.session()
+	case *templateStorage:
+		return s.session()
+	case *s3Storage:
+		return s.session()
+	}
+	return storage
 }
 
 var (
@@ -55,6 +82,14 @@ var (
 
 func shareKey(streamSettings *internet.MemoryStreamConfig, config *Config) string {
 	parts := []string{config.Service, config.RemoteFolder}
+	if config.S3 != nil {
+		parts = append(parts, config.S3.Endpoint, s3Region(config.S3.Region), config.S3.Bucket)
+		if config.S3.PathStyle {
+			parts = append(parts, "path-style")
+		} else {
+			parts = append(parts, "virtual-hosted-style")
+		}
+	}
 	parts = append(parts, config.Secrets...)
 	if streamSettings != nil {
 		parts = append(parts, streamSettings.SecurityType)

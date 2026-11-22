@@ -11,7 +11,6 @@ import (
 	"github.com/GFW-knocker/Xray-core/common/protocol"
 	"github.com/GFW-knocker/Xray-core/common/serial"
 	"github.com/GFW-knocker/Xray-core/core"
-	"github.com/GFW-knocker/Xray-core/proxy/blackhole"
 	"github.com/GFW-knocker/Xray-core/proxy/dokodemo"
 	"github.com/GFW-knocker/Xray-core/proxy/freedom"
 	"github.com/GFW-knocker/Xray-core/proxy/http"
@@ -51,7 +50,7 @@ func TestSocksBridgeTCP(t *testing.T) {
 		Outbound: []*core.OutboundHandlerConfig{
 			{
 				ProxySettings: serial.ToTypedMessage(&freedom.Config{
-					FinalRules: []*freedom.FinalRuleConfig{{Action: freedom.RuleAction_Allow}},
+					Firewall: []*freedom.FirewallConfig{{Action: freedom.RuleAction_Allow}},
 				}),
 			},
 		},
@@ -128,7 +127,7 @@ func TestSocksWithHttpRequest(t *testing.T) {
 		Outbound: []*core.OutboundHandlerConfig{
 			{
 				ProxySettings: serial.ToTypedMessage(&freedom.Config{
-					FinalRules: []*freedom.FinalRuleConfig{{Action: freedom.RuleAction_Allow}},
+					Firewall: []*freedom.FirewallConfig{{Action: freedom.RuleAction_Allow}},
 				}),
 			},
 		},
@@ -217,7 +216,7 @@ func TestSocksBridageUDP(t *testing.T) {
 			},
 			Outbound: []*core.OutboundHandlerConfig{
 				{
-					ProxySettings: serial.ToTypedMessage(&freedom.Config{FinalRules: []*freedom.FinalRuleConfig{{Action: freedom.RuleAction_Allow}}}),
+					ProxySettings: serial.ToTypedMessage(&freedom.Config{Firewall: []*freedom.FirewallConfig{{Action: freedom.RuleAction_Allow}}}),
 				},
 			},
 		}
@@ -331,11 +330,11 @@ func TestSocksBridageUDPWithRouting(t *testing.T) {
 			},
 			Outbound: []*core.OutboundHandlerConfig{
 				{
-					ProxySettings: serial.ToTypedMessage(&blackhole.Config{}),
+					ProxySettings: serial.ToTypedMessage(&freedom.Config{Firewall: []*freedom.FirewallConfig{{Action: freedom.RuleAction_Block, Delay: &freedom.Range{}}}}),
 				},
 				{
 					Tag:           "out",
-					ProxySettings: serial.ToTypedMessage(&freedom.Config{FinalRules: []*freedom.FinalRuleConfig{{Action: freedom.RuleAction_Allow}}}),
+					ProxySettings: serial.ToTypedMessage(&freedom.Config{Firewall: []*freedom.FirewallConfig{{Action: freedom.RuleAction_Allow}}}),
 				},
 			},
 		}
@@ -435,7 +434,7 @@ func TestSocksConformanceMod(t *testing.T) {
 		Outbound: []*core.OutboundHandlerConfig{
 			{
 				ProxySettings: serial.ToTypedMessage(&freedom.Config{
-					FinalRules: []*freedom.FinalRuleConfig{{Action: freedom.RuleAction_Allow}},
+					Firewall: []*freedom.FirewallConfig{{Action: freedom.RuleAction_Allow}},
 				}),
 			},
 		},
