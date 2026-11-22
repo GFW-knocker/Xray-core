@@ -14,6 +14,10 @@ import (
 type Dialer struct {
 	DialTCP func(net.Destination) (net.Conn, error)
 	DialUDP func(net.Destination) (net.Conn, error)
+	// DialTCPDetached dials like DialTCP but is not cancelled with the request
+	// that opened the connection, for masks that keep dialing for as long as
+	// the connection lives (tcplane).
+	DialTCPDetached func(net.Destination) (net.Conn, error)
 }
 
 type ListenConfig struct {
@@ -76,6 +80,9 @@ func (fm *FinalMask) DialTCP(ctx context.Context, dest net.Destination) (net.Con
 	dialer := &Dialer{
 		DialTCP: func(dest net.Destination) (net.Conn, error) {
 			return fm.dialTCP(ctx, dest)
+		},
+		DialTCPDetached: func(dest net.Destination) (net.Conn, error) {
+			return fm.dialTCP(context.WithoutCancel(ctx), dest)
 		},
 		DialUDP: func(dest net.Destination) (net.Conn, error) {
 			conn, addr, err := fm.dialUDP(ctx, dest)
@@ -165,6 +172,9 @@ func (fm *FinalMask) DialUDP(ctx context.Context, dest net.Destination) (net.Con
 	dialer := &Dialer{
 		DialTCP: func(dest net.Destination) (net.Conn, error) {
 			return fm.dialTCP(ctx, dest)
+		},
+		DialTCPDetached: func(dest net.Destination) (net.Conn, error) {
+			return fm.dialTCP(context.WithoutCancel(ctx), dest)
 		},
 		DialUDP: func(dest net.Destination) (net.Conn, error) {
 			conn, addr, err := fm.dialUDP(ctx, dest)

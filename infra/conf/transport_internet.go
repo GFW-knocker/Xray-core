@@ -64,6 +64,7 @@ type StreamConfig struct {
 	SplitHTTPSettings   *SplitHTTPConfig   `json:"splithttpSettings"`
 	KCPSettings         *KCPConfig         `json:"kcpSettings"`
 	QUICSettings        *QUICConfig        `json:"quicSettings"`
+	QUICTCPSettings     *QUICTCPConfig     `json:"quictcpSettings"`
 	GRPCSettings        *GRPCConfig        `json:"grpcSettings"`
 	WSSettings          *WebSocketConfig   `json:"wsSettings"`
 	HTTPUPGRADESettings *HttpUpgradeConfig `json:"httpupgradeSettings"`
@@ -85,12 +86,20 @@ func (c *StreamConfig) Build() (*internet.StreamConfig, error) {
 	if c.Method != nil {
 		c.Network = c.Method
 	}
-	if c.Network != nil {
+	// "quictcp" is the quic transport carried by a "tcplane" udp mask, which
+	// is added below as the last udp mask.
+	quicTCP := c.Network != nil && strings.EqualFold(string(*c.Network), "quictcp")
+	if quicTCP {
+		config.ProtocolName = "quic"
+	} else if c.Network != nil {
 		protocol, err := c.Network.Build()
 		if err != nil {
 			return nil, err
 		}
 		config.ProtocolName = protocol
+	}
+	if c.QUICTCPSettings != nil && !quicTCP {
+		return nil, errors.New(`"quictcpSettings" needs "network": "quictcp"`)
 	}
 
 	switch strings.ToLower(c.Security) {
@@ -169,6 +178,23 @@ func (c *StreamConfig) Build() (*internet.StreamConfig, error) {
 		config.TransportSettings = append(config.TransportSettings, &internet.TransportConfig{
 			ProtocolName: "mkcp",
 			Settings:     serial.ToTypedMessage(ts),
+		})
+	}
+	if quicTCP {
+		if c.QUICSettings != nil {
+			return nil, errors.New(`"network": "quictcp" takes "quictcpSettings", not "quicSettings"`)
+		}
+		settings := c.QUICTCPSettings
+		if settings == nil {
+			settings = &QUICTCPConfig{}
+		}
+		qs, err := settings.QUICConfig.Build()
+		if err != nil {
+			return nil, errors.New("Failed to build QUICTCP config").Base(err)
+		}
+		config.TransportSettings = append(config.TransportSettings, &internet.TransportConfig{
+			ProtocolName: "quic",
+			Settings:     serial.ToTypedMessage(qs),
 		})
 	}
 	if c.QUICSettings != nil {
@@ -270,6 +296,31 @@ func (c *StreamConfig) Build() (*internet.StreamConfig, error) {
 				return nil, err
 			}
 			config.QuicParams = proto.(*internet.QuicParams)
+		}
+	}
+	if quicTCP {
+		if c.FinalMask != nil {
+			for _, mask := range c.FinalMask.Udp {
+				if strings.EqualFold(mask.Type, "tcplane") {
+					return nil, errors.New(`"network": "quictcp" already carries a tcplane mask; set its options in "quictcpSettings"`)
+				}
+			}
+		}
+		settings := c.QUICTCPSettings
+		if settings == nil {
+			settings = &QUICTCPConfig{}
+		}
+		lane, err := settings.TCPLane.Build()
+		if err != nil {
+			return nil, errors.New("Failed to build QUICTCP config").Base(err)
+		}
+		config.Udpmasks = append(config.Udpmasks, serial.ToTypedMessage(lane))
+		// lanes reorder datagrams, which loss-based congestion control takes
+		// for loss: BBR unless "quicParams" names another
+		if config.QuicParams == nil {
+			config.QuicParams = &internet.QuicParams{Congestion: "bbr", BbrProfile: "standard"}
+		} else if config.QuicParams.Congestion == "" {
+			config.QuicParams.Congestion = "bbr"
 		}
 	}
 

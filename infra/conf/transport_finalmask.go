@@ -90,6 +90,7 @@ var (
 		"xicmp":         func() interface{} { return new(Xicmp) },
 		"realm":         func() interface{} { return new(Realm) },
 		"udphop":        func() interface{} { return new(UDPHop) },
+		"tcplane":       func() interface{} { return new(TCPLane) },
 	}, "type", "settings")
 )
 

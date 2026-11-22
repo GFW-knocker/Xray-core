@@ -16,11 +16,12 @@ import (
 
 // Listener is an internet.Listener that listens for TCP connections.
 type Listener struct {
-	rawConn  net.PacketConn
-	tr       *quic.Transport
-	listener *quic.Listener
-	done     *done.Instance
-	addConn  internet.ConnHandler
+	quicParams *internet.QuicParams
+	rawConn    net.PacketConn
+	tr         *quic.Transport
+	listener   *quic.Listener
+	done       *done.Instance
+	addConn    internet.ConnHandler
 }
 
 func (l *Listener) acceptStreams(conn *quic.Conn) {
@@ -63,6 +64,7 @@ func (l *Listener) keepAccepting() {
 			time.Sleep(time.Second)
 			continue
 		}
+		useCongestion(conn, l.quicParams)
 		go l.acceptStreams(conn)
 	}
 }
@@ -154,11 +156,12 @@ func Listen(ctx context.Context, address net.Address, port net.Port, streamSetti
 	}
 
 	listener := &Listener{
-		done:     done.New(),
-		rawConn:  conn,
-		tr:       tr,
-		listener: qListener,
-		addConn:  handler,
+		quicParams: streamSettings.QuicParams,
+		done:       done.New(),
+		rawConn:    conn,
+		tr:         tr,
+		listener:   qListener,
+		addConn:    handler,
 	}
 
 	go listener.keepAccepting()

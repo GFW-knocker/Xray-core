@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package xray.transport.internet.finalmask.tcplane;
+option csharp_namespace = "Xray.Transport.Internet.Finalmask.Tcplane";
+option go_package = "github.com/GFW-knocker/Xray-core/transport/internet/finalmask/tcplane";
+option java_package = "com.xray.transport.internet.finalmask.tcplane";
+option java_multiple_files = true;
+
+// Config carries the datagrams of a UDP transport (QUIC, hysteria2, xhttp h3,
+// WireGuard) over many short-lived TCP connections ("lanes"). The client sends
+// on "up" lanes and the server answers on "down" lanes. Budgets are drawn per
+// lane from [min, max]; a lane is retired at the first one reached.
+message Config {
+  // client: TCP writes on an up lane before switching to a new one
+  int64 packets_min = 1;
+  int64 packets_max = 2;
+  // client: up lane lifetime in ms, counted from its first write
+  int64 life_min = 3;
+  int64 life_max = 4;
+  // client: bytes the server may send on a down lane (0 = no limit)
+  int64 bytes_min = 5;
+  int64 bytes_max = 6;
+  // client: down lanes kept open while traffic flows
+  int32 lanes = 7;
+  // client: new lanes per second at most
+  int32 max_rate = 8;
+  // client: destination ports to pick from per lane; server: ports to listen
+  // on. Empty means the port of the outbound / inbound.
+  repeated uint32 ports = 9;
+  // both: lanes without a header made from the same password are dropped
+  string password = 10;
+  // client: ms a retired lane keeps receiving before it is reset
+  int64 grace = 11;
+  // client: ms an unused ready lane is kept before it is replaced
+  int64 idle = 12;
+  // server: ms after which a lane is closed
+  int64 max_life = 13;
+  // server: per-lane socket send buffer in bytes (0 = OS default)
+  int32 sndbuf = 14;
+  // server: open lanes per client IP at most (0 = no limit)
+  int32 max_lanes_per_ip = 15;
+  // client: ms a down lane may take, counted from its first byte
+  int64 down_life = 16;
+  // client: ms to hold a small datagram so several share one TCP write
+  int64 flush = 17;
+}

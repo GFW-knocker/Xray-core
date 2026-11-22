@@ -85,9 +85,18 @@ type destConnections struct {
 // for map and slice work, never across network I/O, so a slow or dead server
 // holds up nothing but other dials to that same server.
 type clientConnections struct {
-	access  sync.Mutex
-	dests   map[net.Destination]*destConnections
+	access sync.Mutex
+	dests  map[net.Destination]*destConnections
+	// masked holds the destinations dialed through a FinalMask, per mask, so
+	// outbounds whose masks differ (say quic and quictcp to one ip:port) never
+	// share a connection. Unmasked dials use dests, as before.
+	masked  map[maskedDest]*destConnections
 	cleanup *task.Periodic
+}
+
+type maskedDest struct {
+	dest net.Destination
+	fm   *finalmask.FinalMask
 }
 
 func isActive(s *quic.Conn) bool {
@@ -132,6 +141,12 @@ func (s *clientConnections) cleanConnections() error {
 			d.conns = nil
 		}
 	}
+	for _, d := range s.masked {
+		d.conns, dead = splitInactive(d.conns, dead)
+		if len(d.conns) == 0 {
+			d.conns = nil
+		}
+	}
 	s.access.Unlock()
 
 	// CloseWithError can wait on the connection's run loop: never under access
@@ -151,6 +166,23 @@ func (s *clientConnections) destination(dest net.Destination) *destConnections {
 	if d == nil {
 		d = &destConnections{dialing: make(chan struct{}, 1)}
 		s.dests[dest] = d
+	}
+	return d
+}
+
+// maskedDestination is destination for dials through the FinalMask fm.
+func (s *clientConnections) maskedDestination(dest net.Destination, fm *finalmask.FinalMask) *destConnections {
+	s.access.Lock()
+	defer s.access.Unlock()
+
+	if s.masked == nil {
+		s.masked = make(map[maskedDest]*destConnections)
+	}
+	k := maskedDest{dest: dest, fm: fm}
+	d := s.masked[k]
+	if d == nil {
+		d = &destConnections{dialing: make(chan struct{}, 1)}
+		s.masked[k] = d
 	}
 	return d
 }
@@ -175,9 +207,14 @@ func (s *clientConnections) openStreamOnExisting(ctx context.Context, d *destCon
 	return nil
 }
 
-func (s *clientConnections) openConnection(ctx context.Context, destAddr net.Addr, config *Config, tlsConfig *tls.Config, sockopt *internet.SocketConfig, fm *finalmask.FinalMask) (stat.Connection, error) {
+func (s *clientConnections) openConnection(ctx context.Context, destAddr net.Addr, config *Config, tlsConfig *tls.Config, sockopt *internet.SocketConfig, fm *finalmask.FinalMask, qp *internet.QuicParams) (stat.Connection, error) {
 	dest := net.DestinationFromAddr(destAddr)
-	d := s.destination(dest)
+	var d *destConnections
+	if fm == nil {
+		d = s.destination(dest)
+	} else {
+		d = s.maskedDestination(dest, fm)
+	}
 
 	if conn := s.openStreamOnExisting(ctx, d, destAddr); conn != nil {
 		return conn, nil
@@ -203,6 +240,9 @@ func (s *clientConnections) openConnection(ctx context.Context, destAddr net.Add
 
 	errors.LogInfo(ctx, "dialing quic to ", dest)
 	cc, err := dialConnection(ctx, dest, destAddr, config, tlsConfig, sockopt, fm, &d.quicVersion)
+	if err == nil {
+		useCongestion(cc.conn, qp)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -345,7 +385,7 @@ func Dial(ctx context.Context, dest net.Destination, streamSettings *internet.Me
 
 	config := streamSettings.ProtocolSettings.(*Config)
 
-	return client.openConnection(ctx, destAddr, config, tlsConfig, streamSettings.SocketSettings, streamSettings.FinalMask)
+	return client.openConnection(ctx, destAddr, config, tlsConfig, streamSettings.SocketSettings, streamSettings.FinalMask, streamSettings.QuicParams)
 }
 
 func init() {
