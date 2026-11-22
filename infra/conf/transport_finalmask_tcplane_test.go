@@ -7,6 +7,7 @@ import (
 
 	"github.com/GFW-knocker/Xray-core/transport/internet/finalmask/salamander"
 	"github.com/GFW-knocker/Xray-core/transport/internet/finalmask/tcplane"
+	"github.com/GFW-knocker/Xray-core/transport/internet/hysteria"
 	"github.com/GFW-knocker/Xray-core/transport/internet/quic"
 )
 
@@ -151,5 +152,79 @@ func TestPlainQuicHasNoLaneMask(t *testing.T) {
 	lane := res.UDPMasks[0].(*tcplane.Config)
 	if res.Protocol != "hysteria" || lane.BytesMin != 0 || lane.BytesMax != 0 {
 		t.Fatalf("hysteria with tcplane: protocol %q lane %+v", res.Protocol, lane)
+	}
+}
+
+func TestHYTCPBuildsHysteriaWithTCPLane(t *testing.T) {
+	sc := new(StreamConfig)
+	raw := `{
+		"network": "hytcp",
+		"security": "tls",
+		"hytcpSettings": {"auth": "pw", "udpIdleTimeout": 60, "lanes": 12, "bytes": "8000-9000", "ports": "4000-4003", "password": "lp"},
+		"finalmask": {"udp": [{"type": "salamander", "settings": {"password": "s"}}]}
+	}`
+	if err := json.Unmarshal([]byte(raw), sc); err != nil {
+		t.Fatal(err)
+	}
+	built, err := sc.Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if built.ProtocolName != "hysteria" || len(built.TransportSettings) != 1 || built.TransportSettings[0].ProtocolName != "hysteria" {
+		t.Fatalf("protocol %q transports %v, want hysteria", built.ProtocolName, built.TransportSettings)
+	}
+	inst, err := built.TransportSettings[0].Settings.GetInstance()
+	if err != nil {
+		t.Fatal(err)
+	}
+	hc := inst.(*hysteria.Config)
+	if hc.Auth != "pw" || hc.UdpIdleTimeout != 60 {
+		t.Errorf("hysteria settings not carried over: %+v", hc)
+	}
+	if len(built.Udpmasks) != 2 {
+		t.Fatalf("%d udp masks, want salamander then tcplane", len(built.Udpmasks))
+	}
+	m0, _ := built.Udpmasks[0].GetInstance()
+	m1, _ := built.Udpmasks[1].GetInstance()
+	if _, ok := m0.(*salamander.Config); !ok {
+		t.Errorf("first mask %T, want salamander", m0)
+	}
+	lane, ok := m1.(*tcplane.Config)
+	if !ok {
+		t.Fatalf("last mask %T, want tcplane", m1)
+	}
+	if lane.Lanes != 12 || lane.BytesMin != 8000 || lane.BytesMax != 9000 || len(lane.Ports) != 4 || lane.Password != "lp" {
+		t.Errorf("lane settings not carried over: %+v", lane)
+	}
+	if built.QuicParams == nil || built.QuicParams.Congestion != "bbr" {
+		t.Errorf("quicParams %+v, want congestion bbr", built.QuicParams)
+	}
+}
+
+func TestHYTCPRejectsAndKeepsHysteria(t *testing.T) {
+	for _, tc := range []struct{ raw, want string }{
+		{`{"network": "hytcp", "hysteriaSettings": {"version": 2}}`, "hytcpSettings"},
+		{`{"network": "hysteria", "hytcpSettings": {}}`, "hytcpSettings"},
+		{`{"network": "hytcp", "finalmask": {"udp": [{"type": "tcplane"}]}}`, "already carries"},
+		{`{"network": "hytcp", "hytcpSettings": {"version": 1}}`, "version"},
+	} {
+		_, err := buildStream(t, tc.raw)
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: err %v, want one mentioning %q", tc.raw, err, tc.want)
+		}
+	}
+	// plain hysteria: no lane mask and hysteria's own congestion default
+	sc := new(StreamConfig)
+	json.Unmarshal([]byte(`{"network": "hysteria", "hysteriaSettings": {"version": 2}}`), sc)
+	built, err := sc.Build()
+	if err != nil || built.ProtocolName != "hysteria" || len(built.Udpmasks) != 0 || built.QuicParams != nil {
+		t.Errorf("plain hysteria changed: %+v err %v", built, err)
+	}
+	// an explicit congestion choice is kept
+	sc = new(StreamConfig)
+	json.Unmarshal([]byte(`{"network": "hytcp", "finalmask": {"quicParams": {"congestion": "force-brutal", "brutalUp": "1 mbps"}}}`), sc)
+	built, err = sc.Build()
+	if err != nil || built.QuicParams.Congestion != "force-brutal" {
+		t.Errorf("hytcp with force-brutal: %+v err %v", built.QuicParams, err)
 	}
 }

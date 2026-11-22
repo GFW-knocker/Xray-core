@@ -65,6 +65,7 @@ type StreamConfig struct {
 	KCPSettings         *KCPConfig         `json:"kcpSettings"`
 	QUICSettings        *QUICConfig        `json:"quicSettings"`
 	QUICTCPSettings     *QUICTCPConfig     `json:"quictcpSettings"`
+	HYTCPSettings       *HYTCPConfig       `json:"hytcpSettings"`
 	GRPCSettings        *GRPCConfig        `json:"grpcSettings"`
 	WSSettings          *WebSocketConfig   `json:"wsSettings"`
 	HTTPUPGRADESettings *HttpUpgradeConfig `json:"httpupgradeSettings"`
@@ -86,20 +87,31 @@ func (c *StreamConfig) Build() (*internet.StreamConfig, error) {
 	if c.Method != nil {
 		c.Network = c.Method
 	}
-	// "quictcp" is the quic transport carried by a "tcplane" udp mask, which
-	// is added below as the last udp mask.
-	quicTCP := c.Network != nil && strings.EqualFold(string(*c.Network), "quictcp")
-	if quicTCP {
-		config.ProtocolName = "quic"
-	} else if c.Network != nil {
-		protocol, err := c.Network.Build()
-		if err != nil {
-			return nil, err
+	// "quictcp" and "hytcp" are the quic and hysteria transports carried by a
+	// "tcplane" udp mask, which is added below as the last udp mask.
+	laneNet := ""
+	if c.Network != nil {
+		switch n := strings.ToLower(string(*c.Network)); n {
+		case "quictcp":
+			laneNet = n
+			config.ProtocolName = "quic"
+		case "hytcp":
+			laneNet = n
+			config.ProtocolName = "hysteria"
+		default:
+			protocol, err := c.Network.Build()
+			if err != nil {
+				return nil, err
+			}
+			config.ProtocolName = protocol
 		}
-		config.ProtocolName = protocol
 	}
+	quicTCP, hyTCP := laneNet == "quictcp", laneNet == "hytcp"
 	if c.QUICTCPSettings != nil && !quicTCP {
 		return nil, errors.New(`"quictcpSettings" needs "network": "quictcp"`)
+	}
+	if c.HYTCPSettings != nil && !hyTCP {
+		return nil, errors.New(`"hytcpSettings" needs "network": "hytcp"`)
 	}
 
 	switch strings.ToLower(c.Security) {
@@ -237,6 +249,27 @@ func (c *StreamConfig) Build() (*internet.StreamConfig, error) {
 			Settings:     serial.ToTypedMessage(hs),
 		})
 	}
+	if hyTCP {
+		if c.HysteriaSettings != nil {
+			return nil, errors.New(`"network": "hytcp" takes "hytcpSettings", not "hysteriaSettings"`)
+		}
+		settings := c.HYTCPSettings
+		if settings == nil {
+			settings = &HYTCPConfig{}
+		}
+		hc := settings.HysteriaConfig
+		if hc.Version == 0 {
+			hc.Version = 2
+		}
+		hs, err := hc.Build()
+		if err != nil {
+			return nil, errors.New("Failed to build HYTCP config").Base(err)
+		}
+		config.TransportSettings = append(config.TransportSettings, &internet.TransportConfig{
+			ProtocolName: "hysteria",
+			Settings:     serial.ToTypedMessage(hs),
+		})
+	}
 	if c.HysteriaSettings != nil {
 		hs, err := c.HysteriaSettings.Build()
 		if err != nil {
@@ -298,25 +331,30 @@ func (c *StreamConfig) Build() (*internet.StreamConfig, error) {
 			config.QuicParams = proto.(*internet.QuicParams)
 		}
 	}
-	if quicTCP {
+	if laneNet != "" {
 		if c.FinalMask != nil {
 			for _, mask := range c.FinalMask.Udp {
 				if strings.EqualFold(mask.Type, "tcplane") {
-					return nil, errors.New(`"network": "quictcp" already carries a tcplane mask; set its options in "quictcpSettings"`)
+					return nil, errors.New(`"network": "`, laneNet, `" already carries a tcplane mask; set its options in "`, laneNet, `Settings"`)
 				}
 			}
 		}
-		settings := c.QUICTCPSettings
-		if settings == nil {
-			settings = &QUICTCPConfig{}
+		var laneCfg TCPLane
+		if quicTCP && c.QUICTCPSettings != nil {
+			laneCfg = c.QUICTCPSettings.TCPLane
 		}
-		lane, err := settings.TCPLane.Build()
+		if hyTCP && c.HYTCPSettings != nil {
+			laneCfg = c.HYTCPSettings.TCPLane
+		}
+		lane, err := laneCfg.Build()
 		if err != nil {
-			return nil, errors.New("Failed to build QUICTCP config").Base(err)
+			return nil, errors.New("Failed to build ", laneNet, " lane config").Base(err)
 		}
 		config.Udpmasks = append(config.Udpmasks, serial.ToTypedMessage(lane))
 		// lanes reorder datagrams, which loss-based congestion control takes
-		// for loss: BBR unless "quicParams" names another
+		// for loss: BBR unless "quicParams" names another (for hytcp this
+		// also replaces hysteria's default, Brutal at the announced rates,
+		// which over lanes queues up whenever the rate is set too high)
 		if config.QuicParams == nil {
 			config.QuicParams = &internet.QuicParams{Congestion: "bbr", BbrProfile: "standard"}
 		} else if config.QuicParams.Congestion == "" {

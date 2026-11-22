@@ -127,3 +127,10 @@ type QUICTCPConfig struct {
 	QUICConfig
 	TCPLane
 }
+
+// HYTCPConfig is "hytcpSettings": the hysteria transport's own settings plus
+// the tcplane options, in one object. "version" defaults to 2.
+type HYTCPConfig struct {
+	HysteriaConfig
+	TCPLane
+}
