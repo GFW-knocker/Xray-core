@@ -1,6 +1,6 @@
 module github.com/GFW-knocker/Xray-core
 
-go 1.27
+go 1.27.4
 
 require (
 	github.com/GFW-knocker/wireguard v1.0.8
