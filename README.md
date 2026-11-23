@@ -35,7 +35,8 @@ https://github.com/XTLS/Xray-core
   - [teddysun/xray](https://hub.docker.com/r/teddysun/xray)
   - [wulabing/xray_docker](https://github.com/wulabing/xray_docker)
 - Web Panel
-  - [3x-ui](https://github.com/MHSanaei/3x-ui)
+  - [3x-ui with Mahsa-Core](https://github.com/GFW-knocker/3x-ui/)
+  - [3x-ui](https://github.com/MHSanaei/3x-ui)  
   - [Marzban](https://github.com/Gozargah/Marzban)
   - [Xray-UI](https://github.com/qist/xray-ui)
   - [X-Panel](https://github.com/xeefei/X-Panel)
