@@ -55,6 +55,7 @@ var (
 		"vmess":       func() interface{} { return new(VMessOutboundConfig) },
 		"jvmess":      func() interface{} { return new(JVMessOutboundConfig) },
 		"trojan":      func() interface{} { return new(TrojanClientConfig) },
+		"jtrojan":     func() interface{} { return new(JTrojanClientConfig) },
 		"hysteria":    func() interface{} { return new(HysteriaClientConfig) },
 		"dns":         func() interface{} { return new(DNSOutboundConfig) },
 		"wireguard":   func() interface{} { return &WireGuardConfig{IsClient: true} },
