@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package xray.proxy.jtrojan;
+option csharp_namespace = "Xray.Proxy.Jtrojan";
+option go_package = "github.com/GFW-knocker/Xray-core/proxy/jtrojan";
+option java_package = "com.xray.proxy.jtrojan";
+option java_multiple_files = true;
+
+message Account {
+  string password = 1;
+}

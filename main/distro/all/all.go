@@ -39,6 +39,7 @@ import (
 	_ "github.com/GFW-knocker/Xray-core/proxy/dokodemo"
 	_ "github.com/GFW-knocker/Xray-core/proxy/freedom"
 	_ "github.com/GFW-knocker/Xray-core/proxy/http"
+	_ "github.com/GFW-knocker/Xray-core/proxy/jtrojan"
 	_ "github.com/GFW-knocker/Xray-core/proxy/jvless/outbound"
 	_ "github.com/GFW-knocker/Xray-core/proxy/jvmess/outbound"
 	_ "github.com/GFW-knocker/Xray-core/proxy/loopback"
